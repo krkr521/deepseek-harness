@@ -374,7 +374,7 @@ async function summarizeCompaction(
 ): Promise<SummarizedCompaction> {
   const summaryResult = await dependencies.summarize(prepared.input, agent, signal)
   const checkpointMessage = createUserMessage({
-    content: frameSummary(summaryResult.summary),
+    content: summaryResult.checkpointContent ?? frameSummary(summaryResult.summary),
     source: compactCheckpointSource(compactionId, sourceCommandId),
   })
   // The checkpoint is text-only, so its fixed-heuristic price IS its route

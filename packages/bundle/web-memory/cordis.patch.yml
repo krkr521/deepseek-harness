@@ -1,0 +1,24 @@
+# Optional native local Memory layer for a Web profile. Apply after dsh-web-app:
+# the Web layer owns storage-domain, settings, LLM, tools, prompt, and browser
+# module discovery; this patch contributes the Memory provider and Consumers.
+
+- insert:
+    - id: memory-local
+      name: '@deepseek-ai/dsh-memory-local'
+
+    - id: memory-curator
+      name: '@deepseek-ai/dsh-memory-curator'
+      config:
+        enabled: false
+        allowToolSources: false
+        maxExistingRecords: 100
+        maxInputBytes: 65536
+        maxOutputTokens: 2048
+        maxOperations: 8
+        timeoutMs: 30000
+
+    - id: tool-memory
+      name: '@deepseek-ai/dsh-tool-memory'
+
+    - id: client-ui-memory
+      name: '@deepseek-ai/dsh-client-ui-memory'

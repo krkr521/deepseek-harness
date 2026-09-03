@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/types/.tsbuildinfo"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core/session" },
+    { "path": "../../llm/llm" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../settings/settings" },
+    { "path": "../../storage/storage" },
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../util/timeout" },
+    { "path": "../../util/values" },
+    { "path": "../memory" },
+    { "path": "../memory-local" }
+  ]
+}

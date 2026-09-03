@@ -87,6 +87,8 @@ export interface SummarizationInput {
 /** Safe summary content plus the exact auxiliary call envelope recorded with it. */
 export type SummaryResult = {
   summary: ContentBlock[]
+  /** Exact replacement content for provider-native checkpoints that cannot use text-summary framing. */
+  checkpointContent?: ContentBlock[]
   provider: string
   model: string
   maxTokens?: number
