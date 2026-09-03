@@ -7,6 +7,7 @@ import { selectCompactableRange } from '@deepseek-ai/dsh-compaction-basic/src/re
 import { frameSummary } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
+import type { CompactionSummarizationTarget } from '@deepseek-ai/dsh-compaction'
 import {
   resolveCompactSpec,
   resolveConfig,
@@ -1155,6 +1156,7 @@ class ExposedCompactionEngine extends BasicCompactionEngine {
     input: SummarizationInput,
     owner: Agent,
     signal?: AbortSignal,
+    summarizationTarget?: CompactionSummarizationTarget,
   ): Promise<{
     summary: ContentBlock[]
     rawOutput?: ContentBlock[]
@@ -1163,7 +1165,7 @@ class ExposedCompactionEngine extends BasicCompactionEngine {
     maxTokens?: number
     usage?: TokenUsage
   }> {
-    return this.summarize(input, owner, signal)
+    return this.summarize(input, owner, signal, summarizationTarget)
   }
 }
 
@@ -1310,6 +1312,46 @@ describe('default one-shot summarizer', () => {
       system: 'WARM SYSTEM',
     })
     expect(policyAdapter.lastOptions?.messages[0]).toEqual(prefix)
+  })
+
+  it('lets a one-shot target override only the summary route', async () => {
+    const { ctx, compact } = await summarizerHarness(
+      [{ type: 'text', text: 'unused default summary' }],
+      undefined,
+      MODEL,
+      {
+        auto: false,
+        maxTokens: 111,
+        modelPolicies: [{
+          provider: MODEL,
+          model: MODEL,
+          summarizationProvider: 'configured-summary',
+          summarizationModel: 'configured-summary',
+          maxTokens: 222,
+        }],
+      },
+    )
+    const selectedAdapter = new ScriptedAdapter([{ type: 'text', text: 'selected summary' }])
+    ctx.llm.registerAdapter(['selected-provider'], selectedAdapter)
+
+    const output = await compact.runSummarize(
+      promptInput('history'),
+      agent(conversation(1), MODEL),
+      SIGNAL,
+      { provider: 'selected-provider', model: 'selected-model' },
+    )
+
+    expect(output).toMatchObject({
+      provider: 'selected-provider',
+      model: 'selected-model',
+      maxTokens: 222,
+    })
+    expect(selectedAdapter.lastOptions).toMatchObject({
+      provider: 'selected-provider',
+      model: 'selected-model',
+      maxTokens: 222,
+      signal: SIGNAL,
+    })
   })
 
   it('resolves the latest routed provider/model before the AgentOptions pair', async () => {

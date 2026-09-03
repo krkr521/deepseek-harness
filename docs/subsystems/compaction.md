@@ -66,7 +66,9 @@ Automatic callers state why policy is running; implementations may treat confirm
 type CompactionTrigger = 'pressure' | 'context-overflow'
 ```
 
-`CompactionEngine` exposes `compactIfNeeded(agent, trigger, signal)` for automatic `pressure` or `context-overflow` policy, `compactNow(agent, signal)` for one useful idle-session reduction even below pressure, and `compactRegion(...)` for an explicit inclusive surface range. `compactNow()` runs as agent maintenance between turns, returns `null` without writing when no useful range exists, records a standalone `turn: null` bracket before summarization, and flushes a closed attempt before later queued prompts may derive from the new surface. Every backend creates its replacement `user/message` source with `compactCheckpointSource(compactionId, sourceCommandId?)`; client and wire consumers import that constructor, `CompactionCheckpointSource`, and `isCompactCheckpointSource()` from the cordis-free `@deepseek-ai/dsh-compaction/checkpoint` subpath, while the package root re-exports them for host consumers. The required transaction identity correlates the replacement checkpoint, while the predicate keeps recognition independent of any one backend. Implementations must forward the supplied signal to summarization. The seam owns no pricing API: the singleton [`ctx.tokenMeter`](token-meter.md) directly owns estimation and replay, while `dsh-compaction-basic` owns retention, event sequencing, routed summarization calls, and their configuration.
+`CompactionEngine` exposes `compactIfNeeded(agent, trigger, signal)` for automatic `pressure` or `context-overflow` policy, `compactNow(agent, signal, options?)` for one useful idle-session reduction even below pressure, and `compactRegion(...)` for an explicit inclusive surface range. Manual options carry optional command provenance and a one-shot provider/model summary target that must not change the agent's conversation route. `compactNow()` runs as agent maintenance between turns, returns `null` without writing when no useful range exists, records a standalone `turn: null` bracket before summarization, and flushes a closed attempt before later queued prompts may derive from the new surface. Every backend creates its replacement `user/message` source with `compactCheckpointSource(compactionId, sourceCommandId?)`; client and wire consumers import that constructor, `CompactionCheckpointSource`, and `isCompactCheckpointSource()` from the cordis-free `@deepseek-ai/dsh-compaction/checkpoint` subpath, while the package root re-exports them for host consumers. The required transaction identity correlates the replacement checkpoint, while the predicate keeps recognition independent of any one backend. Implementations must forward the supplied signal to summarization. The seam owns no pricing API: the singleton [`ctx.tokenMeter`](token-meter.md) directly owns estimation and replay, while `dsh-compaction-basic` owns retention, event sequencing, routed summarization calls, and their configuration.
+
+The human Consumer registers `/compact [<provider> <model>]`. Zero arguments use backend routing, while an exact pair selects only the auxiliary summary route. The shipped Web model-selection plugin decorates the bare invocation with a searchable catalog picker whose rows show the provider display name and exact `provider/model` ids; selecting a row submits the argument form without changing the conversation selection. Direct input and non-Web clients retain the command grammar without depending on that advisory catalog.
 
 Expected manual failures use `ManualCompactionErrorCode`:
 
@@ -159,14 +161,16 @@ abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrig
  *
  * @param agent - idle agent whose durable history should be compacted.
  * @param signal - cancellation scoped to this compaction request.
- * @param sourceCommandId - initiating command identity for a manual compaction.
+ * @param options - optional command provenance and one-shot summary route. A
+ * supplied route affects this compaction only and must not change the agent's
+ * conversation route.
  * @returns the compaction result, or `null` when no safe useful range exists.
  * @throws {@link ManualCompactionError} for expected busy, agent-cancellation,
  * changed-span, summarization/shrink, commit-stage, or persistence failures;
  * an aborted request preserves its exact abort reason. Failed attempts remain
  * visible in the log.
  */
-abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult | null>
+abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, options?: ManualCompactionOptions, ): Promise<CompactionResult | null>
 
 /**
  * Forcibly compact a range of surface nodes into a single summary node.
@@ -190,7 +194,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.md) · [SessionSeq](session.md)
+Types: [SessionSeq](session.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

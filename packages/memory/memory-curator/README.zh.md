@@ -1,6 +1,13 @@
+---
+description: "把已完成的人工轮次整理为有界的原生 Memory 创建和修订检查更新。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-memory-curator`
 
 [English](README.md) | 中文
+
+## 概述
 
 这是一个可选启用的 Consumer，会在人工聊天轮次完成后整理原生 Memory。`memory-curator` 设置命名空间提供两个实时开关：`enabled` 启动自动整理，`allowToolSources` 允许使用过工具（包括 MCP 与网页搜索）的轮次成为来源。第二个开关关闭时，只要轮次中含有 `tool/call` 或 `tool/result`，整轮都会跳过，因此由工具结果派生的助手文本也不能绕过来源策略。
 
@@ -8,6 +15,14 @@ Consumer 会从刚完成的轮次中选择直接人工消息、可见助手文�
 
 分发前，Consumer 会追加 `memory/curation-request`，记录确切路由、系统提示词、消息列表、来源事件 seq、来源策略值和输出上限。所有操作成功后，`memory/curation-applied` 会记录对应请求 seq 和已接受操作。请求携带 `GenerateOptions.purpose: 'memory-curation'`；DeepSeek 适配器会为该用途禁用思考。失败会在用户轮次已经结束后被隔离并记录。插件 fiber 卸载时会等待已经开始的整理任务结束。
 
+## 目录
+
+- [配置与设置](#configuration-and-settings)
+- [模型体验](#model-experience)
+- [已知限制与暂缓工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="configuration-and-settings"></a>
 ## 配置与设置
 
 | 键 | 默认值 | 约定 |
@@ -23,6 +38,7 @@ Consumer 会从刚完成的轮次中选择直接人工消息、可见助手文�
 
 Loader 条目是组合基础层。挂载设置提供方后，持久化的 `memory-curator` section 会覆盖该基础层，两个布尔开关都会实时生效。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 辅助记忆整理请求
@@ -54,8 +70,19 @@ Update operation: {"kind":"update","id":"...","expectedRevision":1,"text":"...",
 
 固定系统提示词具有稳定前缀。每次调用的记忆和轮次数据都会变化，因此其后缀通常不能复用缓存。整理调用本身不会改变对话请求的缓存前缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓工作
 
 - 整理只了解词法记录，不使用 embedding；去重时只能看到最新的有界可访问记录。
 - 自动删除被明确排除。用户或显式模型工具使用当前 revision 删除记录。
 - 秘密防护目前依赖提示词策略和提供方安全机制；自动内容分类尚未形成独立 capability。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>

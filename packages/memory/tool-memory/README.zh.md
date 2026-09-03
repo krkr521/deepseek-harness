@@ -1,6 +1,13 @@
+---
+description: "把原生 Memory 搜索和修订检查变更暴露为模型工具，并提供有界置顶上下文。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-memory
 
 [English](README.md) | 中文
+
+## 概述
 
 本 Consumer 暴露 `memory_search`、`memory_read`、`memory_write`、`memory_update` 和 `memory_forget`。每次调用都要求一个所属 Agent。全局记录对所有 agent 可见；工作区记录绑定到精确的 `agent.session.header.cwd`。工具 schema 从不接受任意工作区路径，read/update/forget 对不可访问 id 与缺失 id 给出完全相同的结果。
 
@@ -8,6 +15,14 @@
 
 可访问作用域内的置顶记录会成为 `memory:pinned` 运行时上下文贡献。文本明确把它们标为不可信历史数据而非指令，对每个存储字段执行 XML 转义，包含 id 与修订号，并且只在 `maxContextBytes` 下纳入完整记录。标准提示词组装会在其进入模型前记录解析后的运行时上下文快照。
 
+## 目录
+
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="configuration"></a>
 ## 配置
 
 | 键 | 默认值 | 约定 |
@@ -18,6 +33,7 @@
 
 每个值都必须是正安全整数，并且不得超过 Provider 对应的搜索上限。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 系统提示词
@@ -82,8 +98,19 @@ assistant 调用会保留提交的查询或变更字段。结果会保留匹配�
 
 追加式历史保留先前的前缀复用；后续调用与结果会扩展未缓存后缀。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延后工作
 
 - 可选的自动对话整理由 [`dsh-memory-curator`](../memory-curator/README.zh.md) 负责；此包的写入、更新与遗忘工具仍保留显式请求策略。
 - 当前没有记录管理界面或秘密检测器；控制面是 Memory 设置开关、显式模型工具与提示词策略。
 - 置顶目前是布尔值。优先级、过期、按 agent 作用域和 token 感知的语义选择均延后。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>

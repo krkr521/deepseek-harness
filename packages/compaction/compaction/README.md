@@ -44,7 +44,7 @@ Mount the shipped backend to register the condensation service, and add `dsh-com
 - name: '@deepseek-ai/dsh-command-compact'
 ```
 
-With these two rows the feature is on: the conversation condenses automatically as it grows, and `/compact` condenses immediately on request and reports how many history items were replaced. If no backend is mounted, nothing condenses and `/compact` fails; the full dependency chain for the shipped backend is in its own README.
+With these two rows the feature is on: the conversation condenses automatically as it grows, and `/compact` condenses immediately on request and reports how many history items were replaced. `/compact <provider> <model>` additionally selects a one-shot summary route without changing later conversation requests. If no backend is mounted, nothing condenses and `/compact` fails; the full dependency chain for the shipped backend is in its own README.
 
 ### Implementing a backend
 
@@ -75,7 +75,7 @@ The seam is built on one split and three commitments:
 
 ### Service API
 
-The contract is three abstract operations a backend implements: `compactIfNeeded` for automatic `pressure` or `context-overflow` triggers, `compactNow` for one explicit on-demand reduction, and `compactRegion` for a caller-selected surface range. Reusable request measurement is a separate service, `ctx.tokenMeter`. The exhaustive per-operation semantics live in the [compaction subsystem reference](../../../docs/subsystems/compaction.md); the exact signatures are in [`src/index.ts`](src/index.ts).
+The contract is three abstract operations a backend implements: `compactIfNeeded` for automatic `pressure` or `context-overflow` triggers, `compactNow` for one explicit on-demand reduction, and `compactRegion` for a caller-selected surface range. `compactNow` accepts optional command provenance and a one-shot `CompactionSummarizationTarget`; the target must affect only that summary and must not mutate the agent's conversation route. Reusable request measurement is a separate service, `ctx.tokenMeter`. The exhaustive per-operation semantics live in the [compaction subsystem reference](../../../docs/subsystems/compaction.md); the exact signatures are in [`src/index.ts`](src/index.ts).
 
 A backend that summarizes through `ctx.llm.stream()` must forward the abort signal into the call's `GenerateOptions.signal`, so an abort or fiber dispose tears down the in-flight summarization. Automatic and explicit-region brackets recover their numeric owner from the open turn; manual brackets require no open turn and stamp `turn: null`.
 
@@ -142,7 +142,7 @@ A successful backend replaces an older surface range with one user-role summary 
 
 #### Token effect
 
-Zero direct tokens from this Service Definition. A backend trades many retained history tokens for one summary and leaves the recent tail unchanged.
+Zero direct tokens from this Service Definition. A backend trades many retained history tokens for one summary and leaves the recent tail unchanged. A manual one-shot target selects the auxiliary summary route only; it does not select subsequent conversation calls.
 
 #### KV Cache effect
 
@@ -169,6 +169,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 - **Model-facing tool, undecided** — compaction is human-command only. A model-facing compaction tool remains an open question; it would need its own schema and interaction with the existing command path.
 - **Template and remote backends, undecided** — the `SummaryResult` contract already carries an unmarked `rawOutput` variant for summarizers that do not identify a call through `ctx.llm.stream()`, but no such backend ships.
-- **Range arguments for `/compact`, undecided** — the argument-free form keeps behavior stable across command adapters; explicit ranges stay the programmatic `compactRegion()` path.
+- **Range arguments for `/compact`, undecided** — the command grammar owns only an optional provider/model pair; explicit ranges stay on the programmatic `compactRegion()` path.
 
 </details>

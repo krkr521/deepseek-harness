@@ -2,6 +2,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CodexNativeCompactionEngine from '@deepseek-ai/dsh-codex-native-compaction'
+import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic'
+import type { CompactionSummarizationTarget } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, {
   createMessage,
   createUserMessage,
@@ -47,9 +49,20 @@ class ScriptedAdapter extends LlmAdapter {
   }
 }
 
+/** Expose the provider-selection hook without bypassing either implementation. */
+class ExposedCodexNativeCompactionEngine extends CodexNativeCompactionEngine {
+  runSummarize(
+    input: SummarizationInput,
+    agent: Agent,
+    target?: CompactionSummarizationTarget,
+  ): Promise<SummaryResult> {
+    return this.summarize(input, agent, SIGNAL, target)
+  }
+}
+
 function harness(blocks: ContentBlock[]): {
   adapter: ScriptedAdapter
-  compact: CodexNativeCompactionEngine
+  compact: ExposedCodexNativeCompactionEngine
   ctx: Context
 } {
   const ctx = new Context()
@@ -60,7 +73,7 @@ function harness(blocks: ContentBlock[]): {
   ctx.llm.registerAdapter(['codex', 'other'], adapter)
   return {
     adapter,
-    compact: new CodexNativeCompactionEngine(ctx, { auto: false }),
+    compact: new ExposedCodexNativeCompactionEngine(ctx, { auto: false }),
     ctx,
   }
 }
@@ -102,6 +115,14 @@ function conversation(provider: 'codex' | 'other' = 'codex'): Session {
 
 function testAgent(session: Session, provider: 'codex' | 'other'): Agent {
   return { session, options: { provider, model: MODEL } } as Agent
+}
+
+/** Replayed prefix sufficient to exercise provider selection without a surface transaction. */
+function summaryInput(session: Session): SummarizationInput {
+  return {
+    system: 'conversation system',
+    messages: session.deriveMessages().slice(0, 2),
+  }
 }
 
 describe('Codex-native compaction provider', () => {
@@ -194,6 +215,60 @@ describe('Codex-native compaction provider', () => {
     expect(checkpointHead?.type === 'text' ? checkpointHead.text : '')
       .toContain('<compacted-summary>')
     expect(checkpoint).toContainEqual({ type: 'text', text: 'portable fallback summary' })
+  })
+
+  it('uses a manual non-Codex target as a portable summary for a Codex conversation', async () => {
+    const { adapter, compact } = harness([{ type: 'text', text: 'selected portable summary' }])
+    const session = conversation('codex')
+    const agent = testAgent(session, 'codex')
+
+    const result = await compact.runSummarize(
+      summaryInput(session),
+      agent,
+      { provider: 'other', model: 'selected-text-model' },
+    )
+
+    expect(result.summary).toEqual([{ type: 'text', text: 'selected portable summary' }])
+    expect(adapter.calls[0]).toMatchObject({
+      provider: 'other',
+      model: 'selected-text-model',
+      purpose: 'compaction',
+    })
+    expect(agent.options).toEqual({ provider: 'codex', model: MODEL })
+  })
+
+  it('uses a selected Codex model natively only for a Codex conversation', async () => {
+    const block: ContentBlock = {
+      type: 'codex-compaction',
+      item: { type: 'compaction', encrypted_content: 'selected-native-state' },
+    }
+    const native = harness([block])
+    const codexSession = conversation('codex')
+
+    await native.compact.runSummarize(
+      summaryInput(codexSession),
+      testAgent(codexSession, 'codex'),
+      { provider: 'codex', model: 'selected-native-model' },
+    )
+    expect(native.adapter.calls[0]).toMatchObject({
+      provider: 'codex',
+      model: 'selected-native-model',
+      purpose: 'provider-compaction',
+    })
+
+    const portable = harness([{ type: 'text', text: 'portable Codex-authored summary' }])
+    const otherSession = conversation('other')
+    const result = await portable.compact.runSummarize(
+      summaryInput(otherSession),
+      testAgent(otherSession, 'other'),
+      { provider: 'codex', model: 'selected-native-model' },
+    )
+    expect(portable.adapter.calls[0]).toMatchObject({
+      provider: 'codex',
+      model: 'selected-native-model',
+      purpose: 'compaction',
+    })
+    expect(result.summary).toEqual([{ type: 'text', text: 'portable Codex-authored summary' }])
   })
 
   it('fails before adapter dispatch when opaque Codex state targets another provider', async () => {

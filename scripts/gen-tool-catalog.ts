@@ -55,6 +55,16 @@ import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
+import MemoryStore, {
+  type MemoryCreateRequest,
+  type MemoryId,
+  type MemoryRecord,
+  type MemoryRemoveRequest,
+  type MemorySearchHit,
+  type MemorySearchRequest,
+  type MemoryUpdateRequest,
+} from '@deepseek-ai/dsh-memory'
+import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -90,6 +100,29 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** Inert Memory seam marker that makes the Memory tool schemas harvestable. */
+class CatalogMemoryStore extends MemoryStore {
+  override get(_id: MemoryId): MemoryRecord | undefined {
+    return undefined
+  }
+
+  override search(_request: MemorySearchRequest): readonly MemorySearchHit[] {
+    return []
+  }
+
+  override create(_request: MemoryCreateRequest): Promise<MemoryRecord> {
+    return Promise.reject(new Error('gen-tool-catalog: Memory writes are unreachable during schema harvest'))
+  }
+
+  override update(_request: MemoryUpdateRequest): Promise<MemoryRecord> {
+    return Promise.reject(new Error('gen-tool-catalog: Memory updates are unreachable during schema harvest'))
+  }
+
+  override remove(_request: MemoryRemoveRequest): Promise<void> {
+    return Promise.reject(new Error('gen-tool-catalog: Memory removal is unreachable during schema harvest'))
   }
 }
 
@@ -407,6 +440,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-memory',
+    dir: 'tool-memory',
+    source: 'packages/memory/tool-memory/src/index.ts',
+    requires: ['ctx.tools', 'ctx.memory', 'ctx.systemPrompt', 'an owning Agent at execution time'],
+    writes: ['tool/call', 'memory/changed for mutations', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogMemoryStore)
+      await ctx.plugin(ToolMemory)
+    },
+    note:
+      'The five native Memory tools authorize workspace records from the owning Agent session. Pinned records also enter the logged runtime-context snapshot; the catalog harvest uses an inert provider because schemas do not depend on stored records.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',

@@ -10,6 +10,7 @@ import {
   type CompactionAgentContext,
   type CompactionResult,
   type CompactionTrigger,
+  type ManualCompactionOptions,
   type ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
 import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -32,7 +33,11 @@ class StubCompactionEngine extends CompactionEngine {
   result: CompactionResult | null = RESULT
   failure: unknown
   operation: (() => Promise<CompactionResult | null>) | undefined
-  calls: { agent: ManualCompactAgentContext; signal: AbortSignal }[] = []
+  calls: {
+    agent: ManualCompactAgentContext
+    signal: AbortSignal
+    options: ManualCompactionOptions | undefined
+  }[] = []
 
   override compactIfNeeded(
     _agent: CompactionAgentContext,
@@ -49,12 +54,12 @@ class StubCompactionEngine extends CompactionEngine {
   override compactNow(
     agent: ManualCompactAgentContext,
     signal: AbortSignal,
-    sourceCommandId?: Parameters<CompactionEngine['compactNow']>[2],
+    options?: ManualCompactionOptions,
   ): Promise<CompactionResult | null> {
-    this.calls.push({ agent, signal })
+    this.calls.push({ agent, signal, options })
     if (this.operation !== undefined) return this.operation()
     return this.failure === undefined
-      ? Promise.resolve(this.result === null ? null : this.appendResult(agent, this.result, sourceCommandId))
+      ? Promise.resolve(this.result === null ? null : this.appendResult(agent, this.result, options))
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise arbitrary backend rejection values.
       : Promise.reject(this.failure)
   }
@@ -62,11 +67,11 @@ class StubCompactionEngine extends CompactionEngine {
   private appendResult(
     agent: ManualCompactAgentContext,
     result: CompactionResult,
-    sourceCommandId: Parameters<CompactionEngine['compactNow']>[2],
+    options: ManualCompactionOptions | undefined,
   ): CompactionResult {
     const provenance = {
       compactionId: result.compactionId,
-      ...sourceCommandId === undefined ? {} : { sourceCommandId },
+      ...options?.sourceCommandId === undefined ? {} : { sourceCommandId: options.sourceCommandId },
     }
     agent.session.append('compaction/start', { ...provenance, turn: null })
     agent.session.append('compaction/summary', {
@@ -154,7 +159,7 @@ function expectLastLifecycle(
 }
 
 describe('@deepseek-ai/dsh-command-compact registration', () => {
-  it('registers one argument-free command with Loader-safe exports and disposes it', async () => {
+  it('registers one optional-input command with Loader-safe exports and disposes it', async () => {
     const test = await harness()
     expect(commandCompact.name).toBe('command-compact')
     expect(commandCompact.inject).toEqual(['commands', 'compaction'])
@@ -164,6 +169,7 @@ describe('@deepseek-ai/dsh-command-compact registration', () => {
     expect(test.ctx.commands.list(test.agent)).toContainEqual({
       name: 'compact',
       description: 'Compact older conversation history',
+      input: { hint: '[<provider> <model>]' },
     })
 
     await test.plugin.dispose()
@@ -182,10 +188,30 @@ describe('/compact human command', () => {
       sourceEventSeq: RESULT.summarySeq,
     })
     expect(execution.commandId).toBe(expectLastLifecycle(test, '', execution.result))
-    expect(test.compact.calls).toEqual([{ agent: test.agent, signal: controller.signal }])
+    expect(test.compact.calls).toEqual([{
+      agent: test.agent,
+      signal: controller.signal,
+      options: { sourceCommandId: execution.commandId },
+    }])
   })
 
-  it('returns direct no-history and argument-rejection results', async () => {
+  it('forwards an exact one-shot summary route without changing command provenance', async () => {
+    const test = await harness()
+    const execution = await run(test, ' codex gpt-5.6-luna')
+
+    expect(execution.result.kind).toBe('success')
+    expect(execution.commandId).toBe(expectLastLifecycle(
+      test,
+      ' codex gpt-5.6-luna',
+      execution.result,
+    ))
+    expect(test.compact.calls[0]?.options).toEqual({
+      sourceCommandId: execution.commandId,
+      summarizationTarget: { provider: 'codex', model: 'gpt-5.6-luna' },
+    })
+  })
+
+  it('returns direct no-history and malformed-input results', async () => {
     const test = await harness()
     test.compact.result = null
     const empty = await run(test)
@@ -195,12 +221,14 @@ describe('/compact human command', () => {
     })
     expect(empty.commandId).toBe(expectLastLifecycle(test, '', empty.result))
 
-    const rejected = await run(test, ' now')
-    expect(rejected.result).toEqual({
-      kind: 'error',
-      text: 'Usage: /compact (no arguments)',
-    })
-    expect(rejected.commandId).toBe(expectLastLifecycle(test, ' now', rejected.result))
+    for (const suffix of [' codex', ' codex model extra']) {
+      const rejected = await run(test, suffix)
+      expect(rejected.result).toEqual({
+        kind: 'error',
+        text: 'Usage: /compact [<provider> <model>]',
+      })
+      expect(rejected.commandId).toBe(expectLastLifecycle(test, suffix, rejected.result))
+    }
     expect(test.compact.calls).toHaveLength(1)
   })
 

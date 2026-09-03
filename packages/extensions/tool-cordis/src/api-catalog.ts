@@ -708,9 +708,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the compaction result, or `null` if no compaction was needed.',
       },
       {
-        signature: 'abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult | null>',
+        signature: 'abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, options?: ManualCompactionOptions, ): Promise<CompactionResult | null>',
         description: 'Explicitly compact useful history even below automatic pressure thresholds. Implementations synchronously start an idle task before any asynchronous work, select a useful range without writing on a no-op, then append a standalone `compaction/start` before summarization. That durable marker is the compaction lock until one `compaction/end` attempt. Later waking prompts remain accepted in FIFO order and start only after the optional durability checkpoint and idle-task settlement. Context injected while the summary runs may sit between the marker pair; only the selected span must remain stable.',
-        parameters: [{ name: 'agent', description: 'idle agent whose durable history should be compacted.' }, { name: 'signal', description: 'cancellation scoped to this compaction request.' }, { name: 'sourceCommandId', description: 'initiating command identity for a manual compaction.' }],
+        parameters: [{ name: 'agent', description: 'idle agent whose durable history should be compacted.' }, { name: 'signal', description: 'cancellation scoped to this compaction request.' }, { name: 'options', description: 'optional command provenance and one-shot summary route. A supplied route affects this compaction only and must not change the agent\'s conversation route.' }],
         returns: 'the compaction result, or `null` when no safe useful range exists.',
         throws: ['{@link ManualCompactionError} for expected busy, agent-cancellation, changed-span, summarization/shrink, commit-stage, or persistence failures; an aborted request preserves its exact abort reason. Failed attempts remain visible in the log.'],
       },
@@ -1301,6 +1301,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select a provider by the file\'s extension and run one query. Selection is per-query and order-independent; no match throws `LspError` `LSP_UNAVAILABLE`.',
         parameters: [{ name: 'request', description: 'the normalized query.' }, { name: 'signal', description: 'optional cancellation forwarded to the selected provider.' }],
         returns: 'the normalized, closed-union result.',
+      },
+    ],
+  },
+  {
+    key: 'memory',
+    summary: 'Durable cross-session memory service.',
+    description: 'Durable cross-session memory service. Reads are synchronous projections of provider-owned current state; mutations resolve only after durable commit.',
+    methods: [
+      {
+        signature: 'abstract get(id: MemoryId): MemoryRecord | undefined',
+        description: 'Read one memory by id.',
+        parameters: [{ name: 'id', description: 'Memory id.' }],
+        returns: 'an immutable detached record, or `undefined` when absent.',
+      },
+      {
+        signature: 'abstract search(request: MemorySearchRequest): readonly MemorySearchHit[]',
+        description: 'Search authorized scopes using provider-defined ranking.',
+        parameters: [{ name: 'request', description: 'Resolved scopes, filters, and result limit.' }],
+        returns: 'deterministic immutable hits.',
+      },
+      {
+        signature: 'abstract create(request: MemoryCreateRequest): Promise<MemoryRecord>',
+        description: 'Create one durable memory.',
+        parameters: [{ name: 'request', description: 'Fully resolved memory fields.' }],
+        returns: 'the committed record.',
+      },
+      {
+        signature: 'abstract update(request: MemoryUpdateRequest): Promise<MemoryRecord>',
+        description: 'Replace selected fields when the expected revision is current.',
+        parameters: [{ name: 'request', description: 'Memory id, expected revision, and non-empty patch.' }],
+        returns: 'the committed next revision.',
+      },
+      {
+        signature: 'abstract remove(request: MemoryRemoveRequest): Promise<void>',
+        description: 'Forget one memory when the expected revision is current.',
+        parameters: [{ name: 'request', description: 'Memory id and expected revision.' }],
+        returns: 'resolution after durable removal.',
       },
     ],
   },
@@ -3242,6 +3279,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'memory/changed',
+    mode: 'emit',
+    signature: '\'memory/changed\'(change: MemoryChanged): void',
+    summary: 'Emitted after one memory mutation commits durably.',
+    description: 'Emitted after one memory mutation commits durably.',
+    parameters: [{ name: 'change', description: 'Committed create, update, or remove observation.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -3798,6 +3843,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CompactionResult {\n    compactionId: CompactionId;\n    sourceCommandId?: CommandId;\n    startSeq: SessionSeq;\n    summarySeq: SessionSeq;\n    endSeq: SessionSeq;\n    summary: ContentBlock[];\n    shadowedRange: {\n        start: SessionSeq;\n        end: SessionSeq;\n    };\n    shadowedSeqs: SessionSeq[];\n    shadowedTokenCount: number;\n}',
   },
   {
+    name: 'CompactionSummarizationTarget',
+    declaration: 'export interface CompactionSummarizationTarget {\n    readonly provider: string;\n    readonly model: string;\n}',
+  },
+  {
     name: 'CompactionTrigger',
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
@@ -3971,7 +4020,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DeepSeekLlmApiExtensionRequest',
-    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\';\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\' | \'memory-curation\' | \'provider-compaction\';\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'DeepSeekLlmApiJson',
@@ -4187,7 +4236,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GenerateOptions',
-    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
+    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\' | \'memory-curation\' | \'provider-compaction\';\n}',
   },
   {
     name: 'GenericCallView',
@@ -4196,6 +4245,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GenericResultView',
     declaration: 'export interface GenericResultView {\n    card: \'generic\';\n    title?: string;\n    content?: ContentBlock[];\n}',
+  },
+  {
+    name: 'GlobalMemoryScope',
+    declaration: 'export interface GlobalMemoryScope {\n    readonly kind: \'global\';\n}',
   },
   {
     name: 'GoalActivation',
@@ -4500,6 +4553,50 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'ManualCompactionOptions',
+    declaration: 'export interface ManualCompactionOptions {\n    readonly sourceCommandId?: CommandId;\n    readonly summarizationTarget?: CompactionSummarizationTarget;\n}',
+  },
+  {
+    name: 'MemoryChanged',
+    declaration: 'export type MemoryChanged = {\n    readonly operation: \'create\' | \'update\';\n    readonly record: MemoryRecord;\n} | {\n    readonly operation: \'remove\';\n    readonly id: MemoryId;\n    readonly revision: number;\n};',
+  },
+  {
+    name: 'MemoryCreateRequest',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly text: string;\n    readonly tags: readonly string[];\n    readonly pinned: boolean;\n    readonly sourceSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'MemoryId',
+    declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryPatch',
+    declaration: 'export interface MemoryPatch {\n    readonly text?: string;\n    readonly tags?: readonly string[];\n    readonly pinned?: boolean;\n}',
+  },
+  {
+    name: 'MemoryRecord',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly text: string;\n    readonly tags: readonly string[];\n    readonly pinned: boolean;\n    readonly sourceSessionId?: SessionId;\n    readonly revision: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryRemoveRequest',
+    declaration: 'export interface MemoryRemoveRequest {\n    readonly id: MemoryId;\n    readonly expectedRevision: number;\n}',
+  },
+  {
+    name: 'MemoryScope',
+    declaration: 'export type MemoryScope = GlobalMemoryScope | WorkspaceMemoryScope;',
+  },
+  {
+    name: 'MemorySearchHit',
+    declaration: 'export interface MemorySearchHit {\n    readonly record: MemoryRecord;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemorySearchRequest',
+    declaration: 'export interface MemorySearchRequest {\n    readonly scopes: readonly MemoryScope[];\n    readonly query?: string;\n    readonly tags?: readonly string[];\n    readonly pinned?: boolean;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'MemoryUpdateRequest',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly id: MemoryId;\n    readonly expectedRevision: number;\n    readonly patch: MemoryPatch;\n}',
   },
   {
     name: 'Message',
@@ -6320,6 +6417,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceInsertSessionBeforeRequest',
     declaration: 'export interface WorkspaceInsertSessionBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly beforeSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceMemoryScope',
+    declaration: 'export interface WorkspaceMemoryScope {\n    readonly kind: \'workspace\';\n    readonly cwd: string;\n}',
   },
   {
     name: 'WorkspaceOrderValue',

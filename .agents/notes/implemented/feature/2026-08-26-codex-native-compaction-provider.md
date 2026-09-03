@@ -12,7 +12,7 @@ The compaction capability already owns pressure, range selection, source-event c
 
 ## Decision
 
-`@deepseek-ai/dsh-codex-native-compaction` is an independent, opt-in Service Provider that subclasses `BasicCompactionEngine` and overrides only `summarize()`. It uses the latest durable conversation route. A `codex` route issues one direct `ctx.llm.stream()` call with the original system prompt, tools, selected messages, and `GenerateOptions.purpose: 'provider-compaction'`; every other route delegates to the basic text summarizer.
+`@deepseek-ai/dsh-codex-native-compaction` is an independent, opt-in Service Provider that subclasses `BasicCompactionEngine` and overrides only `summarize()`. It uses the latest durable conversation route plus an optional manual one-shot summary target. Native compaction is valid only when the conversation and effective summary target both use `codex`; that route issues one direct `ctx.llm.stream()` call with the original system prompt, tools, selected messages, and `GenerateOptions.purpose: 'provider-compaction'`. Every other combination delegates to the basic text summarizer so the landed checkpoint remains portable to the conversation provider. A selected Codex model overrides the native request model for that invocation only.
 
 The Codex adapter maps `provider-compaction` to one Responses `{ type: 'compaction_trigger' }` input item. It returns one merge-extensible `codex-compaction` content block containing the complete `{ type: 'compaction', encrypted_content, ...unknownFields }` item. The provider requires exactly one valid block and preserves it in `compaction/summary` as the complete local-call output.
 
@@ -36,6 +36,7 @@ This decision complements rather than supersedes the [compaction capability seam
 
 - The native provider inherits the mature compaction transaction, including deterministic pruning, retained-tail policy, convergence, failure brackets, manual `/compact`, and overflow retry proof.
 - A successful Codex checkpoint is durable but provider-bound. Switching that session to another provider fails before dispatch; model compatibility inside the Codex route remains a remote-provider property.
+- Manual provider/model selection never lands opaque Codex state for a non-Codex conversation. A Codex conversation can select a portable text summarizer or another Codex native model without changing its later route.
 - `GenerateOptions.purpose` includes `provider-compaction` as model-hidden adapter metadata. Generic text compaction continues to use `compaction`.
 - `codex-compaction` extends the LLM content vocabulary. Consumers may render it generically, but adapters that own Codex replay must preserve the item exactly.
 - Native response failure leaves the surface unchanged and records `compaction/end { error }`; automatic pressure may continue with the uncompressed history, while canonical overflow preserves the original request failure unless another durable reduction already advanced the surface.
@@ -43,4 +44,4 @@ This decision complements rather than supersedes the [compaction capability seam
 
 ## Verification
 
-Focused provider tests pin native dispatch metadata, exact checkpoint content, retained raw tail, session reconstruction, non-Codex fallback, invalid-output rollback, and cross-provider admission failure. Adapter tests pin one trigger, non-mutation of translated input, lossless future fields, and exact output-to-input round-trip. A keyless assembled headless snapshot pins context-overflow recovery through `compaction/start`, opaque `compaction/summary`, the unframed replacement, `compaction/end`, and completion of the same turn.
+Focused provider tests pin native dispatch metadata, exact checkpoint content, retained raw tail, session reconstruction, non-Codex fallback, manual portable-target routing, selected Codex native models, invalid-output rollback, and cross-provider admission failure. Adapter tests pin one trigger, non-mutation of translated input, lossless future fields, and exact output-to-input round-trip. A keyless assembled headless snapshot pins context-overflow recovery through `compaction/start`, opaque `compaction/summary`, the unframed replacement, `compaction/end`, and completion of the same turn.

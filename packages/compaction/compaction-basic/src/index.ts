@@ -7,14 +7,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
-import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
+import type {
+  CompactionResult,
+  CompactionSummarizationTarget,
+  CompactionTrigger,
+  ManualCompactionOptions,
+} from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Type-only: makes the optional sibling service available to `ctx.get()`.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import {
@@ -233,17 +237,26 @@ export class BasicCompactionEngine extends CompactionEngine {
    * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
    * @param agent - supplies routed-model history, fallback model, and session id.
    * @param signal - optional cancellation forwarded to the adapter.
+   * @param summarizationTarget - optional one-shot provider/model route for this summary.
    * @returns safe text summary blocks and the exact auxiliary call envelope and output.
    */
   protected async summarize(
     input: SummarizationInput,
     agent: Agent,
     signal?: AbortSignal,
+    summarizationTarget?: CompactionSummarizationTarget,
   ): Promise<SummaryResult> {
     const target = conversationTarget(agent)
-    const config = target === undefined
+    const policy = target === undefined
       ? this.config
       : resolveTargetPolicy(this.config, target)
+    const config = summarizationTarget === undefined
+      ? policy
+      : {
+        ...policy,
+        summarizationProvider: summarizationTarget.provider,
+        summarizationModel: summarizationTarget.model,
+      }
     return summarizeWithLlm(this.ctx, config, input, agent, signal)
   }
 
@@ -364,13 +377,13 @@ export class BasicCompactionEngine extends CompactionEngine {
    * resolve only after its standalone marker pair is durably checkpointed.
    * @param agent - idle agent whose next-turn admission this call reserves.
    * @param signal - cancellation scoped to this compaction request.
-   * @param sourceCommandId - initiating command identity for presentation correlation.
+   * @param options - optional command provenance and one-shot summary route.
    * @returns the committed result, or `null` when no safe useful range exists.
    */
   override compactNow(
     agent: Agent,
     signal: AbortSignal,
-    sourceCommandId?: CommandId,
+    options?: ManualCompactionOptions,
   ): Promise<CompactionResult | null> {
     signal.throwIfAborted()
     try {
@@ -385,7 +398,7 @@ export class BasicCompactionEngine extends CompactionEngine {
           )
           if (range === null) return null
           return await compactSurfaceRegion(
-            this.regionDependencies(),
+            this.regionDependencies(options?.summarizationTarget),
             agent.session,
             range.start,
             range.end,
@@ -393,7 +406,9 @@ export class BasicCompactionEngine extends CompactionEngine {
             {
               owner: null,
               stability: 'selected-span',
-              ...sourceCommandId === undefined ? {} : { sourceCommandId },
+              ...options?.sourceCommandId === undefined
+                ? {}
+                : { sourceCommandId: options.sourceCommandId },
               flush: async () => {
                 await this.ctx.sessions.flush(agent.session)
               },
@@ -422,10 +437,17 @@ export class BasicCompactionEngine extends CompactionEngine {
   }
 
   /** Bind the effective token meter and dynamically dispatched summarizer hook. */
-  private regionDependencies(): { meter: TokenMeter; summarize: RegionSummarize } {
+  private regionDependencies(
+    summarizationTarget?: CompactionSummarizationTarget,
+  ): { meter: TokenMeter; summarize: RegionSummarize } {
     return {
       meter: this.ctx.tokenMeter,
-      summarize: (input, owner, abort) => this.summarize(input, owner, abort),
+      summarize: (input, owner, abort) => this.summarize(
+        input,
+        owner,
+        abort,
+        summarizationTarget,
+      ),
     }
   }
 }

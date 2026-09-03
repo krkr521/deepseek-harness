@@ -44,7 +44,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-command-compact'
 ```
 
-有了这两行配置，功能即已开启：会话增长时自动压缩，`/compact` 收到请求后立即压缩并报告替换了多少历史项。如果未挂载后端，什么都不会压缩，`/compact` 也会失败；随附后端的完整依赖链见其自身 README。
+有了这两行配置，功能即已开启：会话增长时自动压缩，`/compact` 收到请求后立即压缩并报告替换了多少历史项。`/compact <provider> <model>` 还会选择本次摘要路由，而不改变后续对话请求。如果未挂载后端，什么都不会压缩，`/compact` 也会失败；随附后端的完整依赖链见其自身 README。
 
 ### 实现后端
 
@@ -75,7 +75,7 @@ kind: "package-reference"
 
 ### 服务 API
 
-该约定是后端实现的三个抽象操作：`compactIfNeeded` 针对自动 `pressure` 或 `context-overflow` 触发，`compactNow` 进行一次显式按需缩减，`compactRegion` 针对调用方选择的表层范围。可复用的请求测量是独立服务 `ctx.tokenMeter`。穷尽式逐操作语义见[压缩子系统参考](../../../docs/subsystems/compaction.zh.md)；精确签名见 [`src/index.ts`](src/index.ts)。
+该约定是后端实现的三个抽象操作：`compactIfNeeded` 针对自动 `pressure` 或 `context-overflow` 触发，`compactNow` 进行一次显式按需缩减，`compactRegion` 针对调用方选择的表层范围。`compactNow` 接受可选的命令来源与本次 `CompactionSummarizationTarget`；该目标只能影响本次摘要，不得修改 agent 的对话路由。可复用的请求测量是独立服务 `ctx.tokenMeter`。穷尽式逐操作语义见[压缩子系统参考](../../../docs/subsystems/compaction.zh.md)；精确签名见 [`src/index.ts`](src/index.ts)。
 
 通过 `ctx.llm.stream()` 摘要的后端必须将 signal 转发到调用的 `GenerateOptions.signal`，因此 abort 或 fiber dispose（资源释放）会停止进行中的摘要。自动和显式范围标记对会从打开的轮次恢复其数字形式归属；手动标记对不要求存在打开的轮次，并标记 `turn: null`。
 
@@ -142,7 +142,7 @@ kind: "package-reference"
 
 #### Token 影响
 
-该 Service Definition 不会直接产生 token。后端用一份摘要换取多个原本保留的历史 token，并保持近期尾部不变。
+该 Service Definition 不会直接产生 token。后端用一份摘要换取多个原本保留的历史 token，并保持近期尾部不变。手动调用的本次目标只选择辅助摘要路由，不会选择后续对话调用。
 
 #### KV Cache 影响
 
@@ -169,6 +169,6 @@ kind: "package-reference"
 
 - **面向模型的工具，尚未决定**——压缩目前仅限用户命令。面向模型的压缩工具仍是开放问题；它需要自己的 schema，并与现有命令路径协调。
 - **模板与远程后端，尚未决定**——`SummaryResult` 约定已带有未标记的 `rawOutput` 变体，供不通过 `ctx.llm.stream()` 识别调用的摘要器使用，但此类后端尚未随附。
-- **`/compact` 的范围参数，尚未决定**——无参数形式使各命令适配器的行为保持稳定；显式范围仍由编程接口 `compactRegion()` 处理。
+- **`/compact` 的范围参数，尚未决定**——命令语法只拥有可选的提供方／模型对；显式范围仍由编程接口 `compactRegion()` 处理。
 
 </details>

@@ -8,6 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig, SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic'
+import type { CompactionSummarizationTarget } from '@deepseek-ai/dsh-compaction'
 import {
   BlockAssembler,
   LlmError,
@@ -111,20 +112,25 @@ export class CodexNativeCompactionEngine extends BasicCompactionEngine {
   }
 
   /**
-   * Ask the routed Codex adapter for one opaque compaction item. Other routes
-   * retain the basic backend's text summary.
+   * Ask the routed Codex adapter for one opaque compaction item. Other routes,
+   * including a manual non-Codex target, retain the basic backend's text summary.
    * @param input - exact selected conversation prefix.
    * @param agent - owner whose latest route selects the compaction protocol.
    * @param signal - cancellation forwarded to the adapter.
+   * @param summarizationTarget - optional one-shot summary route.
    * @returns provider-native checkpoint content or a basic text summary.
    */
   protected override async summarize(
     input: SummarizationInput,
     agent: Agent,
     signal?: AbortSignal,
+    summarizationTarget?: CompactionSummarizationTarget,
   ): Promise<SummaryResult> {
-    const target = conversationTarget(agent)
-    if (target?.provider !== CODEX_PROVIDER) return super.summarize(input, agent, signal)
+    const conversation = conversationTarget(agent)
+    const target = summarizationTarget ?? conversation
+    if (conversation?.provider !== CODEX_PROVIDER || target?.provider !== CODEX_PROVIDER) {
+      return super.summarize(input, agent, signal, summarizationTarget)
+    }
 
     const options: GenerateOptions = {
       ...target,

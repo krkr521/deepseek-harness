@@ -66,7 +66,9 @@ interface CompactionResult {
 type CompactionTrigger = 'pressure' | 'context-overflow'
 ```
 
-`CompactionEngine` 暴露 `compactIfNeeded(agent, trigger, signal)` 以执行自动 `pressure` 或 `context-overflow` 策略，暴露 `compactNow(agent, signal)` 以便即使未达到压力也对空闲会话进行一次有效缩减，还针对显式、两端均包含的 surface 范围暴露 `compactRegion(...)`。`compactNow()` 作为轮次之间的 agent maintenance 运行；没有有效范围时返回 `null` 且不写入；在摘要前记录独立的 `turn: null` 标记对，并在后续排队提示词能够从新表层派生前 flush 已闭合尝试。每个后端都使用 `compactCheckpointSource(compactionId, sourceCommandId?)` 创建替换用 `user/message` 的源；client 与 wire 消费方从无 Cordis 的 `@deepseek-ai/dsh-compaction/checkpoint` 子路径导入该构造函数、`CompactionCheckpointSource` 和 `isCompactCheckpointSource()`，包根则为 host 消费方重新导出它们。必填的事务身份会关联替换检查点，而该判定函数使检查点识别不依赖任一特定后端。实现必须把传入的 signal 转发给摘要流程。该 seam 不拥有计价 API：单例 [`ctx.tokenMeter`](token-meter.zh.md) 直接拥有估算与回放，而 `dsh-compaction-basic` 拥有保留策略、事件排序、按路由执行的摘要调用及其配置。
+`CompactionEngine` 暴露 `compactIfNeeded(agent, trigger, signal)` 以执行自动 `pressure` 或 `context-overflow` 策略，暴露 `compactNow(agent, signal, options?)` 以便即使未达到压力也对空闲会话进行一次有效缩减，还针对显式、两端均包含的 surface 范围暴露 `compactRegion(...)`。手动选项携带可选命令来源，以及不得改变 agent 对话路由的本次提供方／模型摘要目标。`compactNow()` 作为轮次之间的 agent maintenance 运行；没有有效范围时返回 `null` 且不写入；在摘要前记录独立的 `turn: null` 标记对，并在后续排队提示词能够从新表层派生前 flush 已闭合尝试。每个后端都使用 `compactCheckpointSource(compactionId, sourceCommandId?)` 创建替换用 `user/message` 的源；client 与 wire 消费方从无 Cordis 的 `@deepseek-ai/dsh-compaction/checkpoint` 子路径导入该构造函数、`CompactionCheckpointSource` 和 `isCompactCheckpointSource()`，包根则为 host 消费方重新导出它们。必填的事务身份会关联替换检查点，而该判定函数使检查点识别不依赖任一特定后端。实现必须把传入的 signal 转发给摘要流程。该 seam 不拥有计价 API：单例 [`ctx.tokenMeter`](token-meter.zh.md) 直接拥有估算与回放，而 `dsh-compaction-basic` 拥有保留策略、事件排序、按路由执行的摘要调用及其配置。
+
+面向人类的 Consumer 注册 `/compact [<provider> <model>]`。零个参数使用后端路由，确切参数对只选择辅助摘要路由。随附 Web 模型选择插件为裸调用装饰可搜索的目录选择器，每行显示提供方显示名与确切 `provider/model` id；选择一行会提交参数形式，但不改变对话选择。直接输入与非 Web 客户端保留该命令语法，不依赖这份建议目录。
 
 预期的手动失败使用 `ManualCompactionErrorCode`：
 
@@ -159,14 +161,16 @@ abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrig
  *
  * @param agent - idle agent whose durable history should be compacted.
  * @param signal - cancellation scoped to this compaction request.
- * @param sourceCommandId - initiating command identity for a manual compaction.
+ * @param options - optional command provenance and one-shot summary route. A
+ * supplied route affects this compaction only and must not change the agent's
+ * conversation route.
  * @returns the compaction result, or `null` when no safe useful range exists.
  * @throws {@link ManualCompactionError} for expected busy, agent-cancellation,
  * changed-span, summarization/shrink, commit-stage, or persistence failures;
  * an aborted request preserves its exact abort reason. Failed attempts remain
  * visible in the log.
  */
-abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult | null>
+abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, options?: ManualCompactionOptions, ): Promise<CompactionResult | null>
 
 /**
  * Forcibly compact a range of surface nodes into a single summary node.
@@ -190,7 +194,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.zh.md) · [SessionSeq](session.zh.md)
+Types: [SessionSeq](session.zh.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

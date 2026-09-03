@@ -1,12 +1,13 @@
 /**
  * ui-model-selection browser half on a real cordis Context with fake command/slots/
  * connection faces and real session scopes: the plugin mounts ModelDirectoryResolver
- * as `models`, the /model contribution and the conversation.input.model
- * seat both register, and BOTH entries resolve the SAME per-session
- * directory through the service — a selection submitted through the seat's
+ * as `models`, the /model contribution, bare /compact decoration, and
+ * conversation.input.model seat all register. The model-selection entries
+ * resolve the SAME per-session directory through the service — a selection submitted through the seat's
  * inject face is the current the popup's next options pass marks active
- * (and the reverse), the one-shared-state contract of the dual entry.
- * Scope disposal drops the directory (HMR safety).
+ * (and the reverse); the compaction picker reads that directory but submits
+ * one exact command without changing its current selection. Scope disposal
+ * drops the directory and registrations (HMR safety).
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -16,7 +17,9 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
+import type {
+  CommandContribution, CommandDecoration, SelectOption,
+} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { zh } from '../src/client/locales.ts'
@@ -60,6 +63,8 @@ async function bench() {
   let defaultSelection: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   let selected = defaultSelection
   const calls = { models: 0, select: 0 }
+  const commands: string[] = []
+  let commandResult: { ok: boolean; matched?: boolean } = { ok: true, matched: true }
   const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
   // Whether the Host reports an adapter for the current route; the composer
   // block follows this, never catalog membership.
@@ -99,10 +104,15 @@ async function bench() {
     },
   })
   let contribution: CommandContribution | undefined
+  let decoration: CommandDecoration | undefined
   ctx.provide('commandUi', {
     register(c: CommandContribution) {
       contribution = c
       return () => { contribution = undefined }
+    },
+    decorate(c: CommandDecoration) {
+      decoration = c
+      return () => { decoration = undefined }
     },
   })
   const seats = new Map<string, {
@@ -133,7 +143,15 @@ async function bench() {
         ? undefined
         : {
           sessionId: id,
-          session: { projections: { faceOf: () => projection } },
+          session: {
+            projections: { faceOf: () => projection },
+            command: (line: string) => {
+              commands.push(line)
+              return Promise.resolve(commandResult.ok
+                ? { ok: true as const, value: { matched: commandResult.matched ?? true } }
+                : { ok: false as const, error: { code: 'internal', message: 'boom' } })
+            },
+          },
           ctx: scope,
         }
     },
@@ -155,13 +173,15 @@ async function bench() {
     return handle
   }
   return {
-    ctx, fiber, mint, calls, remote,
+    ctx, fiber, mint, calls, commands, remote,
     contribution: () => contribution!,
+    decoration: () => decoration,
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => selected,
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
+    setCommandResult: (result: { ok: boolean; matched?: boolean }) => { commandResult = result },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
   }
@@ -169,11 +189,13 @@ async function bench() {
 
 const projection = (id: string) => ({ sessionId: sid(id) })
 
-describe('ui-model-selection dual entry', () => {
-  it('registers the /model contribution and the composer model seat', async () => {
+describe('ui-model-selection entries', () => {
+  it('registers /model, the bare /compact decoration, and the composer model seat', async () => {
     const b = await bench()
     expect(b.contribution().name).toBe('model')
     expect(b.contribution().ui.kind).toBe('popupSelect')
+    expect(b.decoration()?.name).toBe('compact')
+    expect(b.decoration()?.ui.kind).toBe('popupSelect')
     expect(b.seat().inject).toBeTypeOf('function')
     // Copy rides the standard locale seat.
     expect(b.seat().locale).toBe('model')
@@ -225,6 +247,45 @@ describe('ui-model-selection dual entry', () => {
       model: 'deepseek-v4-pro',
       reasoningEffort: 'high',
     })
+  })
+
+  it('the compaction picker shows exact provider/model ids and submits a one-shot route', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const compact = b.decoration()!
+    const proj = projection('s1')
+    expect(compact.available(proj)).toBe(true)
+    const options = await compact.ui.options(proj, new AbortController().signal)
+    expect(options).toEqual([
+      {
+        id: 'deepseek-official/deepseek-v4-flash',
+        label: 'DeepSeek-V4-Flash',
+        detail: 'DeepSeek · deepseek-official/deepseek-v4-flash',
+      },
+      {
+        id: 'deepseek-official/deepseek-v4-pro',
+        label: 'DeepSeek-V4-Pro',
+        detail: 'DeepSeek · deepseek-official/deepseek-v4-pro',
+      },
+    ])
+    await compact.ui.onSelect(options[1]!, proj)
+    expect(b.commands).toEqual(['/compact deepseek-official deepseek-v4-pro'])
+    expect(b.calls.select).toBe(0)
+    expect(b.hostCurrent()).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+  })
+
+  it('the compaction picker surfaces rejected, unmatched, and stale submissions', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const compact = b.decoration()!
+    const proj = projection('s1')
+    const options = await compact.ui.options(proj, new AbortController().signal)
+    b.setCommandResult({ ok: false })
+    await expect(compact.ui.onSelect(options[0]!, proj)).rejects.toThrow(/压缩失败：internal：boom/)
+    b.setCommandResult({ ok: true, matched: false })
+    await expect(compact.ui.onSelect(options[0]!, proj)).rejects.toThrow(/未提供 \/compact 命令/)
+    await expect(compact.ui.onSelect({ id: 'stale', label: 'Stale' }, proj))
+      .rejects.toThrow(/目录项已失效/)
   })
 
   it('both entries share one directory instance per session, isolated across sessions', async () => {
@@ -363,7 +424,7 @@ describe('ui-model-selection dual entry', () => {
     expect(() => b.seat().inject!(sid('ghost'))).toThrow(/resolved no scope/)
   })
 
-  it('withholds both model entries from addressed subagent sessions without Agent-bound RPCs', async () => {
+  it('withholds all three entries from addressed subagent sessions without Agent-bound RPCs', async () => {
     const b = await bench()
     b.mint('child')
     b.address(sid('child'))
@@ -373,6 +434,11 @@ describe('ui-model-selection dual entry', () => {
       projection('child'),
       new AbortController().signal,
     )).rejects.toThrow(/unavailable for addressed subagent/)
+    expect(b.decoration()?.available(projection('child'))).toBe(false)
+    await expect(b.decoration()!.ui.options(
+      projection('child'),
+      new AbortController().signal,
+    )).rejects.toThrow(/无法选择压缩模型/)
 
     const face = b.seat().inject!(sid('child'))
     expect(face.available).toBe(false)
@@ -387,5 +453,14 @@ describe('ui-model-selection dual entry', () => {
     b.ctx.emit('connection/reset')
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
+  })
+
+  it('fiber disposal removes both command registrations', async () => {
+    const b = await bench()
+    expect(b.contribution()).toBeDefined()
+    expect(b.decoration()).toBeDefined()
+    await b.fiber.dispose()
+    expect(b.decoration()).toBeUndefined()
+    expect(b.contribution()).toBeUndefined()
   })
 })

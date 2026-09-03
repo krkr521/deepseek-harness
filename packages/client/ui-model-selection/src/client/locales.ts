@@ -12,6 +12,11 @@
 export const zh = {
   'command.description': '选择本会话使用的模型',
   'option.loadError': '目录加载失败：{message}',
+  'compact.option.detail': '{provider} · {providerId}/{modelId}',
+  'compact.error.unavailable': '当前会话无法选择压缩模型',
+  'compact.error.stale': '该模型目录项已失效，请重新选择',
+  'compact.error.failed': '压缩失败：{code}：{message}',
+  'compact.error.missing': '宿主未提供 /compact 命令',
   'trigger.fallback': '选择模型',
   'trigger.loading': '正在加载模型…',
   'trigger.selectAria': '选择模型',
@@ -37,6 +42,11 @@ export type ModelKey = keyof typeof zh
 export const en = {
   'command.description': 'Select the model for this conversation',
   'option.loadError': 'Catalog failed to load: {message}',
+  'compact.option.detail': '{provider} · {providerId}/{modelId}',
+  'compact.error.unavailable': 'Compaction model selection is unavailable for this conversation',
+  'compact.error.stale': 'This catalog entry is stale — select a model again',
+  'compact.error.failed': 'Compaction failed: {code}: {message}',
+  'compact.error.missing': 'The host provides no /compact command',
   'trigger.fallback': 'Select model',
   'trigger.loading': 'Loading models…',
   'trigger.selectAria': 'Select model',

@@ -1,0 +1,4 @@
+- textbox "Filter options":
+  - /placeholder: Search…
+- listbox "/compact matches":
+  - option "DeepSeek-V4-Flash DeepSeek · deepseek-official/deepseek-v4-flash" [selected]

@@ -1,3 +1,8 @@
+---
+description: "面向持久记录、本地持久化、自动整理与模型工具的原生跨会话 Memory 包。"
+kind: "package-group"
+---
+
 # memory/——原生跨会话 Memory 能力系列
 
 [English](README.md) | 中文

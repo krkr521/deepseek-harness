@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-compaction-basic` keeps long agent conversations working near the model's context limit. As token pressure builds, it automatically condenses the oldest part of the conversation into a summary and keeps the recent part intact; after a context-overflow error it condenses and retries. You can also condense on demand with `/compact` from `dsh-command-compact`, and mount `dsh-compaction-tool-result-pruner` to trim oversized tool outputs first. Condensation costs one extra model request that reads the selected history and writes the summary; only the summary text is kept. It condenses derived history only — it cannot shrink the system prompt, tools, or session prefix, and one indivisible unit such as a single huge tool call cannot be split.
+`dsh-compaction-basic` keeps long agent conversations working near the model's context limit. As token pressure builds, it automatically condenses the oldest part of the conversation into a summary and keeps the recent part intact; after a context-overflow error it condenses and retries. You can also condense on demand with `/compact` from `dsh-command-compact`, optionally selecting the summary provider/model for that invocation, and mount `dsh-compaction-tool-result-pruner` to trim oversized tool outputs first. Condensation costs one extra model request that reads the selected history and writes the summary; only the summary text is kept. It condenses derived history only — it cannot shrink the system prompt, tools, or session prefix, and one indivisible unit such as a single huge tool call cannot be split.
 
 ## Table of Contents
 
@@ -82,7 +82,7 @@ The oldest balanced span is replaced by one summary message and the recent tail 
 
 ### On-demand condensation with /compact
 
-With `dsh-command-compact` mounted, type `/compact` in a chat UI to condense immediately, even below the pressure threshold. The command reports how many history items were condensed and the estimated tokens saved. While the agent is mid-turn or condensation is already running, `/compact` reports that condensation is unavailable; prompts you send while it runs are accepted and start after it finishes.
+With `dsh-command-compact` mounted, type `/compact` in a chat UI to condense immediately, even below the pressure threshold. Use `/compact <provider> <model>` to route only that summary through another model; retention and `maxTokens` still come from the current conversation's compaction policy, and later conversation requests keep their route. The command reports how many history items were condensed and the estimated tokens saved. While the agent is mid-turn or condensation is already running, `/compact` reports that condensation is unavailable; prompts you send while it runs are accepted and start after it finishes.
 
 ### Trimming oversized tool outputs
 
@@ -105,7 +105,7 @@ The backend is built on four commitments:
 - **One measurement service prices every decision.** The singleton `ctx.tokenMeter` measures the latest canonical logged envelope and current surface at one consumed-log revision. When the routed adapter declares request-image pricing, the meter applies it to image history. Pressure, recent-tail retention, range selection, and shrink validation use the same route-priced node figures; logged replacement shadow prices stay on the route-independent heuristic so pure projection folds remain consistent.
 - **The log-recorded bracket is the transaction.** All entry points share one bracket-first region transaction: validate the range and live lock, append `compaction/start` synchronously, prepare and await the summary, revalidate, append `compaction/summary` plus the replacement, and make exactly one closing attempt. Automatic and explicit-region calls require a numeric open-turn owner and whole-surface stability; `compactNow()` reserves idle admission, uses `turn: null`, accepts append-only context outside its selected span, flushes every closed attempt, and releases admission in `finally`.
 - **Summarization reuses the provider's warm prefix.** Replaying the last routed request's system prompt, tools, and shadowed-region messages byte-for-byte makes the auxiliary call a genuine prefix of the conversation, so only the trailing instruction and the summary output are uncached.
-- **`summarize()` is the sole subclass hook.** A template- or remote-summarizer subclass can override it while pressure, retention, cited source events, shrink validation, and shadowed-token accounting stay on the token meter.
+- **`summarize()` is the sole subclass hook.** A template- or remote-summarizer subclass can override it and receives the optional one-shot summary target, while pressure, retention, cited source events, shrink validation, and shadowed-token accounting stay on the token meter.
 
 ### Automatic triggers and overflow recovery
 
@@ -115,7 +115,7 @@ Pressure policy resolves capacity from the adapter that owns the durable route. 
 
 ### Summarization mechanics
 
-A direct `ctx.llm.stream()` call uses the configured provider/model pair and cap, falling back to the latest logged request target and then the `AgentOptions` pair, without running the loop-only `agent/request` extension point. The call replays the conversation's own system prompt, tools, and shadowed-region messages verbatim — including image references, which the selected adapter must resolve or explicitly reject — and appends the compaction instruction as the final user message, so it reuses the provider's warm prefix cache instead of invalidating it. The call sets `GenerateOptions.purpose` to `compaction`; only returned text enters the checkpoint, excluding reasoning and tool calls. Image output fails with `UNSUPPORTED_CONTENT` rather than disappearing. The replacement user message frames the summary with `<compacted-summary>` tags; the raw summary remains on the `compaction/summary` event.
+A direct `ctx.llm.stream()` call uses a manual invocation's one-shot provider/model pair first, then the configured pair, the latest logged request target, and the `AgentOptions` pair, without running the loop-only `agent/request` extension point. The one-shot pair changes only routing; the output cap and other policy fields remain selected by the conversation route. The call replays the conversation's own system prompt, tools, and shadowed-region messages verbatim — including image references, which the selected adapter must resolve or explicitly reject — and appends the compaction instruction as the final user message, so it reuses the provider's warm prefix cache instead of invalidating it. The call sets `GenerateOptions.purpose` to `compaction`; only returned text enters the checkpoint, excluding reasoning and tool calls. Image output fails with `UNSUPPORTED_CONTENT` rather than disappearing. The replacement user message frames the summary with `<compacted-summary>` tags; the raw summary remains on the `compaction/summary` event.
 
 ### The region transaction
 

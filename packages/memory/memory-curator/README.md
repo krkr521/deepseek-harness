@@ -1,12 +1,26 @@
+---
+description: "Curate completed human turns into bounded native Memory creates and revision-checked updates."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-memory-curator`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Opt-in Consumer that curates native Memory after a completed human turn. The `memory-curator` settings namespace exposes two live switches: `enabled` starts automatic curation, while `allowToolSources` admits turns that used tools, including MCP and web search. When the second switch is off, any turn containing `tool/call` or `tool/result` is skipped in full, so assistant text derived from that result cannot bypass the source policy.
 
 The Consumer selects direct human messages, visible assistant text, and—only when admitted—tool calls and results from the just-completed turn. It supplies those sources plus the latest accessible global and exact-workspace records to one bounded auxiliary LLM request. The strict JSON result may create or revision-check update records; deletion is not in the output vocabulary. Record validation, scope enforcement, durability, and mutation events remain owned by `ctx.memory`.
 
 Before dispatch, the Consumer appends `memory/curation-request` with the exact route, system prompt, message list, source event seqs, source-policy value, and output cap. After every operation succeeds, `memory/curation-applied` records the matching request seq and accepted operations. The request uses `GenerateOptions.purpose: 'memory-curation'`; the DeepSeek adapter disables thinking for that purpose. Failures are contained and logged after the user turn has already completed. The package waits for curation already in progress when its plugin fiber disposes.
+
+## Table of Contents
+
+- [Configuration and settings](#configuration-and-settings)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Configuration and settings
 
@@ -59,3 +73,13 @@ The fixed system prompt is prefix-stable. The framed memory and turn data change
 - Curation is lexical-record aware rather than embedding-backed; only the latest bounded accessible records are available for deduplication.
 - Automatic deletion is deliberately absent. Users or explicit model tools remove a record with its current revision.
 - Prompt policy and provider-side safety remain the secret defense; automatic content classification is not yet a separate capability.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

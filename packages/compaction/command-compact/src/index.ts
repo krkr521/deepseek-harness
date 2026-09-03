@@ -5,12 +5,25 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import type { CompactionSummarizationTarget } from '@deepseek-ai/dsh-compaction'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 
 export const name = 'command-compact'
 export const inject = ['commands', 'compaction']
 
-const USAGE = 'Usage: /compact (no arguments)'
+const USAGE = 'Usage: /compact [<provider> <model>]'
+
+/** Parse an optional exact provider/model pair from command input. */
+function parseSummarizationTarget(rawInput: string): CompactionSummarizationTarget | undefined | null {
+  const input = rawInput.trim()
+  if (input.length === 0) return undefined
+  const parts = input.split(/\s+/u)
+  if (parts.length !== 2) return null
+  const provider = parts[0]
+  const model = parts[1]
+  if (provider === undefined || model === undefined) return null
+  return { provider, model }
+}
 
 /** Fail loudly if a locally closed union gains an unhandled member. */
 /* v8 ignore start -- closed-union backstop is unreachable without violating the TypeScript contract */
@@ -54,16 +67,18 @@ function expectedFailure(error: ManualCompactionError): CommandResult {
   }
 }
 
-/** Execute one argument-free manual compaction request. */
+/** Execute one manual compaction request with an optional one-shot summary route. */
 async function executeCompact(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult> {
-  if (invocation.rawInput.trim().length > 0) {
-    return { kind: 'error', text: USAGE }
-  }
+  const summarizationTarget = parseSummarizationTarget(invocation.rawInput)
+  if (summarizationTarget === null) return { kind: 'error', text: USAGE }
   try {
-    const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId)
+    const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, {
+      sourceCommandId: invocation.commandId,
+      ...summarizationTarget === undefined ? {} : { summarizationTarget },
+    })
     if (result === null) return { kind: 'success', text: 'No compactable history yet.' }
     return {
       kind: 'success',
@@ -100,6 +115,7 @@ export function apply(ctx: Context): void {
     yield ctx.commands.register({
       name: 'compact',
       description: 'Compact older conversation history',
+      input: { hint: '[<provider> <model>]' },
       handler,
     })
   }, 'command-compact lifecycle')

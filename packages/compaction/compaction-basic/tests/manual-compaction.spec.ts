@@ -11,6 +11,7 @@ import * as CompactionInvariant from '@deepseek-ai/dsh-compaction/invariant'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import { CompactionId, isCompactCheckpointSource, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
+import type { CompactionSummarizationTarget } from '@deepseek-ai/dsh-compaction'
 import {
   createAssistantMessage,
   createUserMessage,
@@ -46,13 +47,16 @@ class GatedCompactionEngine extends BasicCompactionEngine {
   gate: Promise<undefined> | undefined
   duringSummary: (() => void) | undefined
   calls: SummarizationInput[] = []
+  targets: Array<CompactionSummarizationTarget | undefined> = []
 
   override async summarize(
     input: SummarizationInput,
     _agent: Agent,
     _signal?: AbortSignal,
+    summarizationTarget?: CompactionSummarizationTarget,
   ): Promise<SummaryResult> {
     this.calls.push(input)
+    this.targets.push(summarizationTarget)
     this.duringSummary?.()
     if (this.gate !== undefined) await this.gate
     if (this.error !== undefined) throw this.error
@@ -399,7 +403,7 @@ describe('compactNow transaction and failure classification', () => {
     const agent = fakeAgent(session, () => () => undefined)
     const commandId = CommandId('manual-compact-command')
 
-    const result = await compact.compactNow(agent, SIGNAL, commandId)
+    const result = await compact.compactNow(agent, SIGNAL, { sourceCommandId: commandId })
 
     expect(result).not.toBeNull()
     expect(result?.sourceCommandId).toBe(commandId)
@@ -417,6 +421,21 @@ describe('compactNow transaction and failure classification', () => {
     expect(summaryEvent?.data.sourceCommandId).toBe(commandId)
     expect(checkpoint?.data.source).toMatchObject(correlated)
     expect(end?.data).toEqual({ ...correlated, turn: null })
+  })
+
+  it('passes a one-shot summary route only to the manual summarizer call', async () => {
+    const { compact } = detachedService()
+    const session = closedConversation(2)
+    const agent = fakeAgent(session, () => () => undefined)
+    const summarizationTarget = { provider: 'codex', model: 'gpt-5.6-luna' }
+
+    await expect(compact.compactNow(agent, SIGNAL, { summarizationTarget })).resolves.not.toBeNull()
+    expect(compact.targets).toEqual([summarizationTarget])
+
+    const defaultSession = closedConversation(2)
+    const defaultAgent = fakeAgent(defaultSession, () => () => undefined)
+    await compact.compactNow(defaultAgent, SIGNAL)
+    expect(compact.targets).toEqual([summarizationTarget, undefined])
   })
 
   it('reports a live unmatched bracket as busy without summarizing', async () => {

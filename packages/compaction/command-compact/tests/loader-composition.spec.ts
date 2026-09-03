@@ -14,6 +14,7 @@ import {
   type CompactionAgentContext,
   type CompactionResult,
   type CompactionTrigger,
+  type ManualCompactionOptions,
   type ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
 import * as commandCompact from '@deepseek-ai/dsh-command-compact'
@@ -48,11 +49,11 @@ class LoaderCompactionEngine extends CompactionEngine {
   override compactNow(
     agent: ManualCompactAgentContext,
     _signal: AbortSignal,
-    sourceCommandId?: Parameters<CompactionEngine['compactNow']>[2],
+    options?: ManualCompactionOptions,
   ): Promise<CompactionResult | null> {
     const provenance = {
       compactionId: RESULT.compactionId,
-      ...sourceCommandId === undefined ? {} : { sourceCommandId },
+      ...options?.sourceCommandId === undefined ? {} : { sourceCommandId: options.sourceCommandId },
     }
     agent.session.append('compaction/start', { ...provenance, turn: null })
     agent.session.append('compaction/summary', {
@@ -61,8 +62,8 @@ class LoaderCompactionEngine extends CompactionEngine {
       shadowedRange: RESULT.shadowedRange,
       shadowedSeqs: RESULT.shadowedSeqs,
       shadowedTokenCount: RESULT.shadowedTokenCount,
-      provider: 'loader-test',
-      model: 'loader-test',
+      provider: options?.summarizationTarget?.provider ?? 'loader-test',
+      model: options?.summarizationTarget?.model ?? 'loader-test',
     })
     agent.session.append('compaction/end', { ...provenance, turn: null })
     return Promise.resolve({ ...RESULT, ...provenance })
@@ -122,8 +123,14 @@ describe('command-compact real Loader composition', () => {
     expect(context.commands.list(agent)).toContainEqual({
       name: 'compact',
       description: 'Compact older conversation history',
+      input: { hint: '[<provider> <model>]' },
     })
-    const execution = await context.commands.execute(agent, '/compact', [], new AbortController().signal)
+    const execution = await context.commands.execute(
+      agent,
+      '/compact loader-provider loader-model',
+      [],
+      new AbortController().signal,
+    )
     if (execution === undefined) throw new Error('Loader composition did not resolve /compact')
     expect(execution.result).toEqual({
       kind: 'success',
@@ -136,7 +143,7 @@ describe('command-compact real Loader composition', () => {
         data: {
           commandId: execution.commandId,
           name: 'compact',
-          args: '',
+          args: ' loader-provider loader-model',
           source: { kind: 'user' },
         },
       },
@@ -157,8 +164,8 @@ describe('command-compact real Loader composition', () => {
           shadowedRange: RESULT.shadowedRange,
           shadowedSeqs: RESULT.shadowedSeqs,
           shadowedTokenCount: RESULT.shadowedTokenCount,
-          provider: 'loader-test',
-          model: 'loader-test',
+          provider: 'loader-provider',
+          model: 'loader-model',
         },
       },
       {

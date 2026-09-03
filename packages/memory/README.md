@@ -1,3 +1,8 @@
+---
+description: "Native cross-session Memory packages for durable records, local persistence, automatic curation, and model tools."
+kind: "package-group"
+---
+
 # memory/ — native cross-session Memory capability family
 
 English | [中文](README.zh.md)

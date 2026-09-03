@@ -1,14 +1,14 @@
 /**
- * Model selection plugin, browser half — TWO entries over ONE per-session
+ * Model selection plugin, browser half — THREE entries over ONE per-session
  * directory owned by ModelDirectoryResolver (`ctx.modelDirectories`). The /model popupSelect
- * contribution and the composer's named `conversation.input.model` seat share
- * one Host-generation `session/modelCatalog` catalog, combine it with the Session's
- * durable model-selection projection, and submit through `session.selectModel`.
- * A switch made in either entry is what the other shows next. Failures
- * ride each entry's own retry surface (popup shell error/retry; seat menu
- * inline error) without forking the state. Addressed subagent sessions expose
- * neither entry because those Agent-bound RPCs would activate persisted
- * history outside the direct-parent continuation path.
+ * contribution and the composer's named `conversation.input.model` seat submit
+ * durable conversation selection through `session.selectModel`; the bare /compact
+ * decoration submits one exact provider/model route through `session.command`.
+ * All three read one Host-generation `session/modelCatalog` catalog. A durable
+ * switch made in either model-selection entry is what the other shows next,
+ * while a compaction pick leaves that state unchanged. Addressed subagent
+ * sessions expose none of the entries because those Agent-bound operations
+ * would activate persisted history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -72,6 +72,32 @@ function optionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): Sel
   return rows
 }
 
+/** Flatten exact provider/model routes for one-shot manual compaction. */
+function compactionOptionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): SelectOption[] {
+  const rows: SelectOption[] = []
+  for (const group of directory.groups) {
+    for (const model of group.models) {
+      rows.push({
+        id: rowId(group.id, model.id),
+        label: model.name,
+        detail: t('compact.option.detail', {
+          provider: group.name,
+          providerId: group.id,
+          modelId: model.id,
+        }),
+      })
+    }
+  }
+  for (const failure of directory.failures) {
+    rows.push({
+      id: `failure/${failure.id}`,
+      label: failure.name,
+      detail: t('option.loadError', { message: failure.message }),
+    })
+  }
+  return rows
+}
+
 /**
  * Resolve a picked row back to its model selection by matching against the loaded
  * groups (the same data the rows were built from — ids stay opaque).
@@ -105,8 +131,8 @@ export const inject = ['commandUi', 'locale', 'sessions', 'slots', 'remote', 're
 
 /**
  * Client plugin body: mount ModelDirectoryResolver, register the `model` dictionaries,
- * then register the /model popup contribution and the composer model seat
- * over the service.
+ * then register the /model contribution, the bare /compact decoration, and
+ * the composer model seat over the service.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -120,7 +146,8 @@ export function apply(ctx: ClientContext): void {
   // a locale change reaches the next publish.
   ctx.plugin(ModelDirectoryResolver, { blockReason: () => t('blocked.composer') })
 
-  // Entry 1: the /model popupSelect over the shared directory. The command
+  // Entries 1 and 2: the /model popupSelect and bare /compact decoration over
+  // the shared directory. The command
   // description is registry-held text: it reads t() once at registration and
   // refreshes only on re-registration, not on locale change.
   ctx.inject(['commandUi', 'modelDirectories'], (scope: ClientContext) => {
@@ -152,9 +179,43 @@ export function apply(ctx: ClientContext): void {
         },
       },
     }), 'ui-model-selection: /model contribution')
+
+    scope.effect(() => command.decorate({
+      name: 'compact',
+      available: session => sessions.subagentAddress(session.sessionId) === undefined
+        && sessions.binding(session.sessionId) !== undefined,
+      ui: {
+        kind: 'popupSelect',
+        options: async (session) => {
+          if (sessions.subagentAddress(session.sessionId) !== undefined
+            || sessions.binding(session.sessionId) === undefined) {
+            throw new Error(t('compact.error.unavailable'))
+          }
+          return compactionOptionsOf(await models.directoryFor(session.sessionId).load(), t)
+        },
+        onSelect: async (option, session) => {
+          if (sessions.subagentAddress(session.sessionId) !== undefined) {
+            throw new Error(t('compact.error.unavailable'))
+          }
+          const live = sessions.binding(session.sessionId)?.session
+          if (live === undefined) throw new Error(t('compact.error.unavailable'))
+          const directory = models.directoryFor(session.sessionId)
+          const selection = selectionOf(directory.store.getSnapshot(), option.id)
+          if (selection === undefined) throw new Error(t('compact.error.stale'))
+          const result = await live.command(`/compact ${selection.provider} ${selection.model}`)
+          if (!result.ok) {
+            throw new Error(t('compact.error.failed', {
+              code: result.error.code,
+              message: result.error.message,
+            }))
+          }
+          if (!result.value.matched) throw new Error(t('compact.error.missing'))
+        },
+      },
+    }), 'ui-model-selection: /compact decoration')
   })
 
-  // Entry 2: the composer's named model seat over the SAME directory.
+  // Entry 3: the composer's named model seat over the SAME directory.
   ctx.inject(['slots', 'modelDirectories'], (scope: ClientContext) => {
     const models = scope.modelDirectories
     const sessions = scope.sessions

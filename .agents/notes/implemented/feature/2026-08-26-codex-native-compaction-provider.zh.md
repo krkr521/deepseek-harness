@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-`@deepseek-ai/dsh-codex-native-compaction` 是独立、可选启用的 Service Provider。它继承 `BasicCompactionEngine`，只覆盖 `summarize()`。它使用最新持久会话路由：`codex` 路由以原始系统提示词、工具、选中消息和 `GenerateOptions.purpose: 'provider-compaction'` 发起一次直接 `ctx.llm.stream()` 调用；其他路由委托给基础文本摘要器。
+`@deepseek-ai/dsh-codex-native-compaction` 是独立、可选启用的 Service Provider。它继承 `BasicCompactionEngine`，只覆盖 `summarize()`。它使用最新持久会话路由与可选的手动本次摘要目标。只有对话与有效摘要目标都使用 `codex` 时，原生压缩才有效；该路由以原始系统提示词、工具、选中消息和 `GenerateOptions.purpose: 'provider-compaction'` 发起一次直接 `ctx.llm.stream()` 调用。其他组合都委托给基础文本摘要器，使落地的检查点对会话提供方保持可移植。所选 Codex 模型只覆盖本次原生请求模型。
 
 Codex 适配器把 `provider-compaction` 映射成一个 Responses `{ type: 'compaction_trigger' }` 输入项。它返回一个可合并扩展的 `codex-compaction` 内容块，其中包含完整的 `{ type: 'compaction', encrypted_content, ...unknownFields }` item。provider 要求响应必须且只能含一个有效块，并把它作为完整本地调用输出保存在 `compaction/summary` 中。
 
@@ -36,6 +36,7 @@ Codex 适配器把 `provider-compaction` 映射成一个 Responses `{ type: 'com
 
 - 原生 provider 继承成熟压缩事务，包括确定性剪枝、保留尾部策略、收敛、失败括号、手动 `/compact` 与溢出重试证明。
 - 成功的 Codex 检查点可持久化，但受提供方约束。把该会话切换到其他提供方会在发送前失败；Codex 路由内部的模型兼容性仍是远端提供方属性。
+- 手动提供方／模型选择绝不会为非 Codex 对话落地不透明 Codex 状态。Codex 对话可以选择可移植文本摘要器或另一个 Codex 原生模型，而不改变后续路由。
 - `GenerateOptions.purpose` 增加 `provider-compaction`，作为模型不可见的适配器元数据。通用文本压缩继续使用 `compaction`。
 - `codex-compaction` 扩展 LLM 内容词汇。consumer 可以通用展示它，但拥有 Codex 回放的适配器必须精确保留 item。
 - 原生响应失败会保持 surface 不变，并记录 `compaction/end { error }`。自动压力可带未压缩历史继续；规范溢出则保留原始请求失败，除非已有其他持久缩减推进了 surface。
@@ -43,4 +44,4 @@ Codex 适配器把 `provider-compaction` 映射成一个 Responses `{ type: 'com
 
 ## 验证
 
-聚焦 provider 测试固定原生调度元数据、精确检查点内容、保留的原始尾部、会话重建、非 Codex 回退、无效输出回滚与跨提供方准入失败。适配器测试固定单一 trigger、翻译输入不变、未来字段无损与精确输出到输入往返。无密钥的组装 headless 快照固定通过 `compaction/start`、不透明 `compaction/summary`、无框架替换、`compaction/end` 恢复上下文溢出并完成同一轮次。
+聚焦 provider 测试固定原生调度元数据、精确检查点内容、保留的原始尾部、会话重建、非 Codex 回退、手动可移植目标路由、所选 Codex 原生模型、无效输出回滚与跨提供方准入失败。适配器测试固定单一 trigger、翻译输入不变、未来字段无损与精确输出到输入往返。无密钥的组装 headless 快照固定通过 `compaction/start`、不透明 `compaction/summary`、无框架替换、`compaction/end` 恢复上下文溢出并完成同一轮次。

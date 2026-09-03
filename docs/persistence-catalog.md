@@ -517,7 +517,7 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 'memory/curation-applied': MemoryCurationAppliedEventData
 ```
 
-Source: [`packages/memory/memory-curator/src/index.ts:109`](../packages/memory/memory-curator/src/index.ts)
+Source: [`packages/memory/memory-curator/src/index.ts:111`](../packages/memory/memory-curator/src/index.ts)
 
 <a id="memorycuration-request--log-only"></a>
 
@@ -528,7 +528,7 @@ Source: [`packages/memory/memory-curator/src/index.ts:109`](../packages/memory/m
 'memory/curation-request': MemoryCurationRequestEventData
 ```
 
-Source: [`packages/memory/memory-curator/src/index.ts:107`](../packages/memory/memory-curator/src/index.ts)
+Source: [`packages/memory/memory-curator/src/index.ts:109`](../packages/memory/memory-curator/src/index.ts)
 
 ### `model/*`
 

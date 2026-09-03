@@ -1,10 +1,23 @@
+---
+description: "Add native local Memory, automatic curation controls, model tools, and settings UI to the Web profile."
+kind: "package-bundle"
+---
+
 # `@deepseek-ai/dsh-web-memory`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Optional patch layer applied after `@deepseek-ai/dsh-web-app`. It inserts the local Memory provider, settings-controlled automatic curator, explicit Memory tools with pinned context, and the Memory settings page. It relies on the Web bundle's storage-domain, settings, LLM, tool, prompt, and browser-module services.
 
 The patch deliberately keeps `memory-curator.enabled: false` and `allowToolSources: false`. Installing the bundle makes the two controls available; automatic collection begins only after the user enables the first switch, and tool-bearing chats remain excluded until the second switch is enabled.
+
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Model Experience
 
@@ -18,3 +31,13 @@ Defined by the two Consumer packages above.
 
 - This bundle is Web-specific and must be layered after `dsh-web-app`; it is not a standalone profile.
 - Deployment removal leaves the Storage Domain data intact. Reinstalling the bundle reopens the same local records.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

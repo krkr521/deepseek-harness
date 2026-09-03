@@ -12,6 +12,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { CompactionAgentContext } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactAgentContext } from '@deepseek-ai/dsh-compaction'
+import type { ManualCompactionOptions } from '@deepseek-ai/dsh-compaction'
 
 /**
  * A trivial concrete CompactionEngine implementing the abstract contract. The
@@ -22,6 +23,8 @@ import type { ManualCompactAgentContext } from '@deepseek-ai/dsh-compaction'
 class StubCompactionEngine extends CompactionEngine {
   /** Records the signal handed to the most recent call, to prove it threads through. */
   lastSignal: AbortSignal | undefined
+  /** Records the options handed to the most recent manual call. */
+  lastManualOptions: ManualCompactionOptions | undefined
 
   override async compactIfNeeded(
     _agent: CompactionAgentContext,
@@ -35,8 +38,10 @@ class StubCompactionEngine extends CompactionEngine {
   override async compactNow(
     _agent: ManualCompactAgentContext,
     signal: AbortSignal,
+    options?: ManualCompactionOptions,
   ): Promise<CompactionResult | null> {
     this.lastSignal = signal
+    this.lastManualOptions = options
     return null
   }
 
@@ -113,11 +118,15 @@ describe('CompactionEngine seam', () => {
     const session = Session.create(SessionId('s'))
     expect(await svc.compactIfNeeded(stubAgent(session), 'pressure', new AbortController().signal)).toBeNull()
     const signal = new AbortController().signal
+    const options: ManualCompactionOptions = {
+      summarizationTarget: { provider: 'summary-provider', model: 'summary-model' },
+    }
     expect(await svc.compactNow({
       ...stubAgent(session),
       runMaintenance: task => task(new AbortController().signal),
-    }, signal)).toBeNull()
+    }, signal, options)).toBeNull()
     expect(svc.lastSignal).toBe(signal)
+    expect(svc.lastManualOptions).toBe(options)
   })
 
   it('compaction/* events merge into SessionEventMap and are log-only', async () => {

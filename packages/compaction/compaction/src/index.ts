@@ -78,6 +78,22 @@ export interface ManualCompactAgentContext extends CompactionAgentContext {
   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
 }
 
+/** Explicit provider/model route for one compaction summary request. */
+export interface CompactionSummarizationTarget {
+  /** Registered LLM provider route. */
+  readonly provider: string
+  /** Model id within the selected provider. */
+  readonly model: string
+}
+
+/** Optional provenance and summarization route for one manual compaction. */
+export interface ManualCompactionOptions {
+  /** Initiating command identity for presentation correlation. */
+  readonly sourceCommandId?: CommandId
+  /** One-shot summary route; omission preserves backend configuration and conversation routing. */
+  readonly summarizationTarget?: CompactionSummarizationTarget
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     compaction: CompactionEngine
@@ -129,7 +145,9 @@ export abstract class CompactionEngine extends Service {
    *
    * @param agent - idle agent whose durable history should be compacted.
    * @param signal - cancellation scoped to this compaction request.
-   * @param sourceCommandId - initiating command identity for a manual compaction.
+   * @param options - optional command provenance and one-shot summary route. A
+   * supplied route affects this compaction only and must not change the agent's
+   * conversation route.
    * @returns the compaction result, or `null` when no safe useful range exists.
    * @throws {@link ManualCompactionError} for expected busy, agent-cancellation,
    * changed-span, summarization/shrink, commit-stage, or persistence failures;
@@ -139,7 +157,7 @@ export abstract class CompactionEngine extends Service {
   abstract compactNow(
     agent: ManualCompactAgentContext,
     signal: AbortSignal,
-    sourceCommandId?: CommandId,
+    options?: ManualCompactionOptions,
   ): Promise<CompactionResult | null>
 
   /**

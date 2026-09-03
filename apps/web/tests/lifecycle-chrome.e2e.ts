@@ -32,6 +32,7 @@ const REPLAY_OVERRIDE = join(SNAPSHOT_DIR, 'replay.override.json')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
+const COMPACT_COMMAND_EXPECTED = join(SNAPSHOT_DIR, 'compact-command.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
 const CONNECTION_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'connection-error.expected.md')
 // Post-reload golden: the same settled conversation rebuilt purely from
@@ -99,6 +100,25 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     ])
     const fuzzySnapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
+    await menu.getByRole('option').click()
+    const compactPicker = page.getByRole('listbox', { name: '/compact matches' })
+    await compactPicker.waitFor({ timeout: 10_000 })
+    await expect.poll(() => compactPicker.getByRole('option').allTextContents()).toEqual([
+      'DeepSeek-V4-FlashDeepSeek · deepseek-official/deepseek-v4-flash',
+    ])
+    const compactCommandSnapshot = await captureStableAria(
+      page,
+      '[aria-label="/compact options"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(COMPACT_COMMAND_EXPECTED, compactCommandSnapshot, MODE)
+    await page.getByRole('textbox', { name: 'Filter options' }).press('Escape')
+    await expect.poll(() => compactPicker.count()).toBe(0)
+    // The direct grammar remains available for provider/model ids copied from
+    // elsewhere; only a bare invocation is decorated with the picker.
+    await writeComposerDraft(page, input, '/compact ')
+    expect(await input.evaluate(element => element.style.getPropertyValue('--dsh-composer-hint')))
+      .toBe(JSON.stringify('[<provider> <model>]'))
     await writeComposerDraft(page, input, '')
     await expect.poll(() => menu.count()).toBe(0)
   })
@@ -392,7 +412,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.v2.jsonl', 'replay.override.json', 'command-menu.expected.md',
-      'command-menu-fuzzy.expected.md', 'connection-error.expected.md', 'hero.expected.md', 'plan-active.expected.md',
+      'command-menu-fuzzy.expected.md', 'compact-command.expected.md', 'connection-error.expected.md',
+      'hero.expected.md', 'plan-active.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',
     ])
   })

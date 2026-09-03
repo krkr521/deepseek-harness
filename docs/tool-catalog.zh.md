@@ -34,6 +34,7 @@
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
+| `@deepseek-ai/dsh-tool-memory` | `memory_forget`、`memory_read`、`memory_search`、`memory_update`、`memory_write` | `ctx.tools`、`ctx.memory`、`ctx.systemPrompt`、`an owning Agent at execution time` | `tool/call`、`memory/changed for mutations`、`tool/result` | - | 五个原生 Memory 工具会根据所属 Agent 会话授权工作区记录。置顶记录也会进入已记录的运行时上下文快照；目录生成时使用惰性 Provider，因为 schema 不依赖已存记录。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`、`session_event_search`、`session_event_trace`、`session_search`、`session_trace` | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionQuery`、`a calling Agent for workspace authority` | `tool/call`、`tool/result` | - | 这 5 个只读工具会隐藏提供方游标，并根据不可变的调用 agent 会话为每个结果授权。该包需要选择启用；需要强制截止时间或限制行内输出的组合还会挂载通用超时或 spill 策略。 |
@@ -1246,6 +1247,174 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 来源：[`packages/lsp/tool-lsp/src/index.ts`](../packages/lsp/tool-lsp/src/index.ts)
 
 lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。
+
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+### `memory_forget`
+
+使用当前修订号永久遗忘一条持久 Memory 记录。请先读取记录，并且只在用户要求移除或更正已存信息时使用。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "description": "Current positive revision."
+    }
+  },
+  "required": [
+    "id",
+    "revision"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_read`
+
+读取一条持久 Memory 记录及其当前修订号。当前 agent 作用域外的记录与缺失记录不可区分。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Memory id returned by search or pinned context."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_search`
+
+搜索当前 agent 可见的持久原生 Memory 记录。这是对记忆正文与标签的词法搜索，不是会话历史搜索。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Words or phrase to find."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Search global Memory, the current workspace, or both.",
+      "enum": [
+        "all",
+        "global",
+        "workspace"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "description": "Optional AND filter: every tag must be present.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "query",
+    "scope"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_update`
+
+使用 memory_read 或 memory_search 返回的修订号更新一条持久 Memory 记录。若其他写入方已先行修改，该操作会失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "description": "Current positive revision."
+    },
+    "text": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pinned": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "revision"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_write`
+
+在用户明确要求记住稳定事实或偏好后创建一条持久 Memory 记录。不要保存秘密或临时任务状态。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "Self-contained fact or preference to remember."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Global across workspaces, or limited to the current workspace.",
+      "enum": [
+        "global",
+        "workspace"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "description": "Short retrieval labels.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pinned": {
+      "type": "boolean",
+      "description": "Inject this record into every matching turn context."
+    }
+  },
+  "required": [
+    "text",
+    "scope"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+五个原生 Memory 工具会根据所属 Agent 会话授权工作区记录。置顶记录也会进入已记录的运行时上下文快照；目录生成时使用惰性 Provider，因为 schema 不依赖已存记录。
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 
