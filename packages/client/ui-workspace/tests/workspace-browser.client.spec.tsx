@@ -78,6 +78,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
     startSession: vi.fn(),
+    startPresentedSession: vi.fn(),
+    resolvePresentedWorkspace: vi.fn(async key => key as WorkspaceId),
     open: vi.fn(),
     searchSessions: vi.fn(async () => ({ items: [], hasMore: false })),
     searchResultLimit: 20,
@@ -91,6 +93,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: undefined, isLoopback: true }),
+    useWorkspacePresentations: hook([]),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
     ...overrides,
@@ -473,20 +476,20 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('expands the target group before starting a session from its ＋', () => {
-    const startSession = vi.fn()
+    const startPresentedSession = vi.fn()
     const b = mount({
       useSessions: hook(sessionState([summary('alpha-s', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
-      startSession,
+      startPresentedSession,
     })
-    startSession.mockImplementation(() => {
+    startPresentedSession.mockImplementation(() => {
       expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
     })
     expect(screen.queryByText('alpha-s')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '在“alpha”中新建会话' }))
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
     expect(screen.getByText('alpha-s')).toBeTruthy()
-    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+    expect(startPresentedSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
   it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {
@@ -554,20 +557,20 @@ describe('WorkspaceBrowser', () => {
       summary('blank', 150, { blank: true }),
       summary('mid', 200),
     ]
-    const startSession = vi.fn()
+    const startPresentedSession = vi.fn()
     const b = mount({
       useSessions: hook(sessionState(items)),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
-      startSession,
+      startPresentedSession,
     })
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['old', 'blank', 'mid'])
     })
-    startSession.mockImplementation(() => {
+    startPresentedSession.mockImplementation(() => {
       rerender(b, { useSessions: hook(sessionState(items, { current: sid('blank') })) })
     })
     fireEvent.click(screen.getByRole('button', { name: '在“alpha”中新建会话' }))
-    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+    expect(startPresentedSession).toHaveBeenCalledWith(wid('alpha'))
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old', 'mid'])
       expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['blank'])
@@ -721,6 +724,42 @@ describe('WorkspaceBrowser', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('reveals a retained monthly chat in its presentation collection after search', () => {
+    const root = '/home/user/.dsh/default-chats'
+    const monthPath = `${root}/2026-9`
+    const legacyPath = '/home/old-user/.dsh/default-chats/2026-8'
+    const members = Array.from({ length: 5 }, (_, index) => summary(`newest-${index}`, 6 - index, {
+      cwd: monthPath,
+    }))
+    const target = summary('legacy', 1, { displayTitle: 'Needle legacy chat', cwd: legacyPath })
+    const open = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([...members, target])),
+      useWorkspaces: hook(workspaceState([{
+        ...workspace('september', members.map(member => member.id)), path: monthPath,
+      }])),
+      useWorkspacePresentations: hook([{
+        key: 'default-chat', title: '聊天', path: root,
+        matchesPath: path => path.includes('/.dsh/default-chats/'),
+        resolveWorkspace: async () => wid('september'),
+      }]),
+      open,
+    })
+    const input = screen.getByPlaceholderText<HTMLInputElement>('搜索会话…')
+    fireEvent.change(input, { target: { value: 'needle' } })
+    expect(screen.getByText('聊天')).toBeTruthy()
+    fireEvent.click(screen.getByRole('treeitem'))
+
+    expect(open).toHaveBeenCalledWith(target.id)
+    expect(input.value).toBe('')
+    expect(screen.queryByRole('tree', { name: '搜索结果' })).toBeNull()
+    expect(b.store.getSnapshot().groupExpansion).toEqual({ 'default-chat': true })
+    const targetRow = screen.getByText('Needle legacy chat').closest('[role="treeitem"]')
+    expect(targetRow).toBeTruthy()
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(targetRow)
   })
 
   it('waits for authoritative Workspace membership before revealing a grouped search result', async () => {

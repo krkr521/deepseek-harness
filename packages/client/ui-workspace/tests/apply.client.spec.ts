@@ -124,6 +124,19 @@ describe('ui-workspace apply', () => {
     expect(startSession).toHaveBeenCalledWith('ws')
     browser.startSession()
     expect(startSession).toHaveBeenLastCalledWith(undefined)
+    const disposeCollection = b.ctx.workspacePresentation.register({
+      key: 'default-chat',
+      title: '聊天',
+      path: '/default-chats',
+      matchesPath: path => path.startsWith('/default-chats/'),
+      resolveWorkspace: async () => 'ws-current' as never,
+    })
+    expect(browser.hooks.workspacePresentations.getSnapshot()).toHaveLength(1)
+    browser.startPresentedSession('default-chat')
+    await vi.waitFor(() => { expect(startSession).toHaveBeenCalledWith('ws-current') })
+    await expect(browser.resolvePresentedWorkspace('default-chat')).resolves.toBe('ws-current')
+    disposeCollection()
+    expect(browser.hooks.workspacePresentations.getSnapshot()).toHaveLength(0)
     browser.open('session' as never)
     expect(b.open).toHaveBeenCalledWith('session')
     const signal = new AbortController().signal
@@ -151,6 +164,7 @@ describe('ui-workspace apply', () => {
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
+    await expect(picker.resolvePresentedWorkspace('ws-real')).resolves.toBe('ws-real')
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {

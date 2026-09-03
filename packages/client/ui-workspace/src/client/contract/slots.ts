@@ -32,6 +32,7 @@ import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { WorkspacePresentationCollection } from '../presentation.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -96,6 +97,8 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    /** Registered UI-only Workspace collections. */
+    workspacePresentations: HostObservable<readonly WorkspacePresentationCollection[]>
   }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
@@ -103,6 +106,10 @@ export type WorkspaceBrowserInjected = {
    * Workspace, then the recent Workspace, or clear into the New Session view.
    */
   startSession: (workspaceId?: WorkspaceId) => void
+  /** Resolve a presentation key and start in its real target Workspace. */
+  startPresentedSession: (key: string) => void
+  /** Resolve a presentation key to the real Workspace selected by a picker. */
+  resolvePresentedWorkspace: (key: string) => Promise<WorkspaceId>
   /** Open a real Session. */
   open: (sessionId: SessionId) => void
   /**
@@ -161,6 +168,12 @@ export type WorkspaceBrowserProps =
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** Registered UI-only Workspace collections. */
+  hooks: DirectoryPickingInjected['hooks'] & {
+    workspacePresentations: HostObservable<readonly WorkspacePresentationCollection[]>
+  }
+  /** Resolve a presentation key to the real Workspace selected by the owner. */
+  resolvePresentedWorkspace: (key: string) => Promise<WorkspaceId>
 }
 
 /**
@@ -172,5 +185,5 @@ export type WorkspacePickerProps =
   PropsRuntime<'conversation.hero.workspace'>
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
-  & DirectoryPickingHooks
+  & PropsHooks<WorkspacePickerInjected['hooks']>
   & PropsLocale<'workspace'>

@@ -21,10 +21,11 @@ import type {
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
-import type { SessionNode, SessionOrderBy } from '../tree.ts'
+import type { SessionNode, SessionOrderBy, WorkspaceAccount } from '../tree.ts'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, owningGroupKey, UNGROUPED_KEY,
+  deriveFlat, deriveGroups, deriveSearchResults, deriveWorkspaceAccounts, owningGroupKey, UNGROUPED_KEY,
 } from '../tree.ts'
+import type { WorkspacePresentationCollection } from '../presentation.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
@@ -234,7 +235,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
-  'useSessions' | 'useSessionPendingInteraction' | 'startSession' | 'open' | 'forkSession'
+  'useSessions' | 'useSessionPendingInteraction' | 'startPresentedSession' | 'open' | 'forkSession'
   | 'insertWorkspaceBefore' | 'insertSessionBefore' | 't'
 > & {
   /** Host account home for POSIX hover-path abbreviation. */
@@ -242,6 +243,8 @@ type SessionTreeProps = Pick<
   workspaces: readonly WorkspaceView[]
   /** Whether the current Workspace stream has a complete Host baseline. */
   workspaceReady: boolean
+  /** UI-only Workspace collections active for this browser. */
+  workspacePresentations: readonly WorkspacePresentationCollection[]
   /** Explicit persisted zero-or-five-session state by Workspace group. */
   groupExpansion: Readonly<Record<string, boolean>>
   /** Persist one Workspace group's zero-or-five-session state. */
@@ -274,8 +277,8 @@ type SessionTreeProps = Pick<
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
-  workspaceReady,
+  useSessions, useSessionPendingInteraction, startPresentedSession, open, forkSession, workspaces,
+  workspacePresentations, archivedSessionIds, workspaceReady,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
@@ -285,9 +288,13 @@ function SessionTree({
   const list = useSessions(s => s)
   const pendingInteractions = useSessionPendingInteraction(s => s)
   const current = list.current
+  const accounts = useMemo(
+    () => deriveWorkspaceAccounts(list, workspaces, workspacePresentations),
+    [list, workspaces, workspacePresentations],
+  )
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
-    : owningGroupKey(workspaces, revealSessionId)
+    : owningGroupKey(accounts, revealSessionId)
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -299,7 +306,7 @@ function SessionTree({
   useNativeDragAcceptance(nativeDragActive)
   const currentGroup = current === undefined || !workspaceReady
     ? undefined
-    : owningGroupKey(workspaces, current)
+    : owningGroupKey(accounts, current)
   useEffect(() => {
     if (current === undefined || currentGroup === undefined || Object.hasOwn(groupExpansion, currentGroup)) return
     setGroupExpanded(currentGroup, true)
@@ -309,21 +316,21 @@ function SessionTree({
     [groupExpansion],
   )
   const ungroupedSessionIds = useMemo(() => {
-    const accounted = new Set(workspaces.flatMap(workspace => workspace.sessionIds))
+    const accounted = new Set(accounts.flatMap(account => account.sessionIds))
     return list.ids.filter((id: SessionId) => list.byId[id] !== undefined && !accounted.has(id))
-  }, [list, workspaces])
+  }, [accounts, list])
   useEffect(() => {
     if (list.phase !== 'ready') return
     const switchedToUpdated = previousOrderBy.current !== 'updated' && orderBy === 'updated'
     previousOrderBy.current = orderBy
-    const accounts = [
-      ...workspaces.map(workspace => ({
-        key: workspace.workspaceId as string,
-        sessionIds: workspace.sessionIds.filter(id => list.byId[id] !== undefined),
+    const orderAccounts = [
+      ...accounts.map(account => ({
+        key: account.key,
+        sessionIds: account.sessionIds.filter(id => list.byId[id] !== undefined),
       })),
       { key: UNGROUPED_KEY, sessionIds: ungroupedSessionIds },
     ]
-    for (const { key, sessionIds } of accounts) {
+    for (const { key, sessionIds } of orderAccounts) {
       const previousOrder = sessionOrderByAccount[key]
       const previousUpdatedAt = sessionUpdatedAtByAccount[key] ?? {}
       const next = nextSessionOrderAccount({
@@ -338,26 +345,26 @@ function SessionTree({
         syncSessionOrderAccount(key, next.order.map(id => id as string), next.updatedAt)
       }
     }
-  }, [list, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, ungroupedSessionIds, workspaces])
-  const orderedWorkspaces = useMemo(() => {
-    return workspaces.map((workspace) => {
-      const stored = sessionOrderByAccount[workspace.workspaceId as string]
-      const sessionIds = reconciledSessionOrder(workspace.sessionIds, stored)
-      return { ...workspace, sessionIds }
+  }, [accounts, list, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, ungroupedSessionIds])
+  const orderedAccounts = useMemo(() => {
+    return accounts.map((account) => {
+      const stored = sessionOrderByAccount[account.key]
+      const sessionIds = reconciledSessionOrder(account.sessionIds, stored)
+      return { ...account, sessionIds }
     })
-  }, [sessionOrderByAccount, workspaces])
+  }, [accounts, sessionOrderByAccount])
   const orderedUngroupedSessionIds = useMemo(
     () => reconciledSessionOrder(ungroupedSessionIds, sessionOrderByAccount[UNGROUPED_KEY]),
     [sessionOrderByAccount, ungroupedSessionIds],
   )
   const groups = useMemo(
-    () => deriveGroups(list, orderedWorkspaces, archivedSessionIds, pendingInteractions, {
+    () => deriveGroups(list, orderedAccounts, archivedSessionIds, pendingInteractions, {
       expandedGroups,
       ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
         ? {}
         : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
     }),
-    [list, orderedWorkspaces, archivedSessionIds, pendingInteractions, expandedGroups, sessionOrderByAccount],
+    [list, orderedAccounts, archivedSessionIds, pendingInteractions, expandedGroups, sessionOrderByAccount],
   )
   useEffect(() => {
     if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
@@ -390,7 +397,7 @@ function SessionTree({
     if (sourceIndex !== -1 && visibleInsertAt === sourceIndex) return
     const accountSessionIds = activeDrag.accountKey === UNGROUPED_KEY
       ? orderedUngroupedSessionIds
-      : orderedWorkspaces.find(workspace => workspace.workspaceId === activeDrag.accountKey)?.sessionIds
+      : orderedAccounts.find(account => account.key === activeDrag.accountKey)?.sessionIds
     if (accountSessionIds === undefined) return
     const nextOrder = accountSessionIds.filter(id => id !== activeDrag.sessionId)
     let anchor: SessionId | undefined
@@ -419,7 +426,7 @@ function SessionTree({
       if (!collapsedSessionRows(nextGroup).rows.some(node => node.id === activeDrag.sessionId)) return
     }
     setSessionOrder(activeDrag.accountKey, nextOrder.map(id => id as string))
-    if (orderBy === 'updated' || activeDrag.accountKey === UNGROUPED_KEY) return
+    if (orderBy === 'updated' || group.kind !== 'workspace' || group.workspaceId === undefined) return
     insertSessionBefore(activeDrag.accountKey as WorkspaceId, activeDrag.sessionId, anchor).catch((reason: unknown) => {
       console.warn('session reorder rejected:', reason)
     })
@@ -529,9 +536,9 @@ function SessionTree({
                   setGroupExpanded(group.key, !group.expanded)
                 }}
                 onCreate={() => {
-                  if (group.workspaceId !== undefined) {
+                  if (group.kind !== 'ungrouped') {
                     setGroupExpanded(group.key, true)
-                    startSession(group.workspaceId)
+                    startPresentedSession(group.key)
                   }
                 }}
                 drag={workspaceDragProps}
@@ -764,7 +771,7 @@ function SearchResults({
   resultLimit,
   t,
 }: Pick<SessionTreeProps, 'useSessions' | 'useSessionPendingInteraction' | 'open' | 't'> & {
-  workspaces: readonly WorkspaceView[]
+  workspaces: readonly WorkspaceAccount[]
   archivedSessionIds: readonly SessionNode['id'][]
   query: string
   remote: RemoteSearchState
@@ -840,6 +847,7 @@ export function WorkspaceBrowser({
   useStore,
   actions,
   startSession,
+  startPresentedSession,
   open,
   renameSession,
   forkSession,
@@ -853,6 +861,8 @@ export function WorkspaceBrowser({
   searchResultLimit,
   useDirectoryFlow,
   useHostInfo,
+  useWorkspacePresentations,
+  resolvePresentedWorkspace,
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
@@ -861,6 +871,12 @@ export function WorkspaceBrowser({
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const workspacePresentations = useWorkspacePresentations(state => state)
+  const sessionList = useSessions(state => state)
+  const presentationAccounts = useMemo(
+    () => deriveWorkspaceAccounts(sessionList, workspaces, workspacePresentations),
+    [sessionList, workspaces, workspacePresentations],
+  )
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
@@ -869,14 +885,14 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
-  const currentBlankSessionId = useSessions((state) => {
-    const current = state.current
-    return current !== undefined && state.byId[current]?.blank === true ? current : undefined
-  })
+  const current = sessionList.current
+  const currentBlankSessionId = current !== undefined && sessionList.byId[current]?.blank === true
+    ? current
+    : undefined
   const currentBlankAccount = currentBlankSessionId === undefined
     || workspacePhase !== 'ready'
     ? undefined
-    : owningGroupKey(workspaces, currentBlankSessionId)
+    : owningGroupKey(presentationAccounts, currentBlankSessionId)
   const promotedBlank = useRef<{ sessionId: SessionId; accountKey: string } | undefined>(undefined)
   useEffect(() => {
     if (currentBlankSessionId === undefined || currentBlankAccount === undefined) {
@@ -900,9 +916,9 @@ export function WorkspaceBrowser({
     actions.retainAccountKeys([
       UNGROUPED_KEY,
       FLAT_SESSION_ORDER_KEY,
-      ...workspaces.map(workspace => workspace.workspaceId as string),
+      ...presentationAccounts.map(account => account.key),
     ])
-  }, [actions.retainAccountKeys, workspacePhase, workspaces])
+  }, [actions.retainAccountKeys, presentationAccounts, workspacePhase])
   // The query outlives the tree and the input (both wide-only) so collapsing
   // does not silently drop an in-progress filter.
   const [query, setQuery] = useState('')
@@ -1214,6 +1230,8 @@ export function WorkspaceBrowser({
           open={wsPickerOpen}
           anchorRef={wsPlusRef}
           useWorkspaces={useWorkspaces}
+          useWorkspacePresentations={useWorkspacePresentations}
+          resolvePresentedWorkspace={resolvePresentedWorkspace}
           createWorkspace={createWorkspace}
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
@@ -1254,7 +1272,7 @@ export function WorkspaceBrowser({
               useSessions={useSessions}
               useSessionPendingInteraction={useSessionPendingInteraction}
               open={openSearchResult}
-              workspaces={workspaces}
+              workspaces={presentationAccounts}
               archivedSessionIds={archivedSessionIds}
               query={normalizedQuery}
               remote={remoteSearch}
@@ -1288,6 +1306,7 @@ export function WorkspaceBrowser({
                 forkSession={forkSession}
                 workspaces={workspaces}
                 workspaceReady={workspacePhase === 'ready' && workspaceStreamState !== 'loading'}
+                workspacePresentations={workspacePresentations}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1295,7 +1314,7 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
-                startSession={startSession}
+                startPresentedSession={startPresentedSession}
                 open={open}
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 insertSessionBefore={insertSessionBefore}

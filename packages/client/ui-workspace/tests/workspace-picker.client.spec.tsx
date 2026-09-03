@@ -95,6 +95,8 @@ function mount(
       useSessions={hook(sessions)}
       useSessionPendingInteraction={hook(noPendingInteraction)}
       useWorkspaces={hook(workspaceState(nextItems))}
+      useWorkspacePresentations={hook([])}
+      resolvePresentedWorkspace={async key => key as WorkspaceId}
       onPick={onPick}
       onClose={onClose}
       createWorkspace={createWorkspace}
@@ -117,6 +119,42 @@ function chooseAdd(): void {
 }
 
 describe('WorkspacePicker', () => {
+  it('lists one presentation collection and resolves it to the current real Workspace', async () => {
+    const august = { ...workspace('august', '聊天'), path: 'C:\\Users\\sample-user\\.dsh\\default-chats\\2026-8' }
+    const september = { ...workspace('september', '聊天'), path: 'C:\\Users\\sample-user\\.dsh\\default-chats\\2026-9' }
+    const onPick = vi.fn()
+    const resolvePresentedWorkspace = vi.fn(async () => september.workspaceId)
+    const { renderSlot } = flowProbe()
+    render(
+      <WorkspacePicker
+        open
+        anchorRef={anchor()}
+        useSessions={hook(sessions)}
+        useSessionPendingInteraction={hook(noPendingInteraction)}
+        useWorkspaces={hook(workspaceState([september, august]))}
+        useWorkspacePresentations={hook([{
+          key: 'default-chat',
+          title: '聊天',
+          path: 'C:\\Users\\sample-user\\.dsh\\default-chats',
+          matchesPath: path => path.includes('\\.dsh\\default-chats\\'),
+          resolveWorkspace: async () => september.workspaceId,
+        }])}
+        resolvePresentedWorkspace={resolvePresentedWorkspace}
+        onPick={onPick}
+        onClose={() => {}}
+        createWorkspace={vi.fn()}
+        useDirectoryFlow={occupancySource().useDirectoryFlow}
+        renderSlot={renderSlot}
+        t={t}
+      />,
+    )
+
+    expect(screen.getAllByRole('menuitem', { name: '聊天' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('menuitem', { name: '聊天' }))
+    await waitFor(() => { expect(onPick).toHaveBeenCalledWith(september.workspaceId) })
+    expect(resolvePresentedWorkspace).toHaveBeenCalledWith('default-chat')
+  })
+
   it('lists same-title Workspaces separately and forwards the selected id', () => {
     const b = mount([workspace('alpha', 'Shared'), workspace('beta', 'Shared')])
     const entries = screen.getAllByRole('menuitem', { name: 'Shared' })
@@ -215,6 +253,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         useSessionPendingInteraction={hook(noPendingInteraction)}
+        useWorkspacePresentations={hook([])} resolvePresentedWorkspace={async key => key as WorkspaceId}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
@@ -231,6 +270,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         useSessionPendingInteraction={hook(noPendingInteraction)}
+        useWorkspacePresentations={hook([])} resolvePresentedWorkspace={async key => key as WorkspaceId}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,

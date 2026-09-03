@@ -555,6 +555,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The basic backend consumes post-step pressure and request-error recovery events; there is no model-facing compact tool.',
   },
   {
+    key: 'memory',
+    pkg: 'memory',
+    title: 'Durable memory record seam',
+    mode: 'seam',
+    implementations: ['memory-local'],
+    consumers: ['tool-memory', 'memory-curator'],
+    note: 'The local provider owns revisioned scoped records; the tool exposes explicit model operations and the curator applies configured background extraction policy.',
+  },
+  {
     key: 'subagents',
     pkg: 'subagent',
     title: 'Subagent provider and continuation service',

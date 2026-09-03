@@ -18,6 +18,7 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
+import type { WorkspacePresentationCollection } from './presentation.ts'
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
@@ -32,6 +33,10 @@ export interface WorkspacePickFlowProps {
   anchorRef?: RefObject<HTMLElement | null> | undefined
   /** Selector hook over the workspace list (framework standard hook). */
   useWorkspaces: <S>(selector: (state: WorkspaceSnapshot) => S) => S
+  /** Selector hook over registered UI-only Workspace collections. */
+  useWorkspacePresentations: SnapshotSelectorHook<readonly WorkspacePresentationCollection[]>
+  /** Resolve a presentation key to the real Workspace selected by the owner. */
+  resolvePresentedWorkspace: (key: string) => Promise<WorkspaceId>
   /** Adopt a picked host directory as a real Workspace. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
   /** Bound occupancy selector hook for this surface's directory-flow hole (empty leaves the surface with no add action). */
@@ -60,6 +65,8 @@ export function WorkspacePickFlow({
   open,
   anchorRef,
   useWorkspaces,
+  useWorkspacePresentations,
+  resolvePresentedWorkspace,
   createWorkspace,
   useDirectoryFlow,
   renderDirectoryFlow,
@@ -71,6 +78,25 @@ export function WorkspacePickFlow({
 }: WorkspacePickFlowProps) {
   const workspaceSnapshot = useWorkspaces(state => state)
   const workspaces = workspaceSnapshot.items
+  const collections = useWorkspacePresentations(state => state)
+  const presentedWorkspaces = (() => {
+    const includedCollections = new Set<string>()
+    return workspaces.flatMap((workspace) => {
+      const collection = collections.find(candidate => candidate.matchesPath(workspace.path))
+      if (collection === undefined) {
+        return [{ id: workspace.workspaceId, label: workspace.title }]
+      }
+      if (includedCollections.has(collection.key)) return []
+      includedCollections.add(collection.key)
+      return [{ id: collection.key, label: collection.title }]
+    })
+  })()
+  const selectedWorkspace = selectedId === undefined
+    ? undefined
+    : workspaces.find(workspace => workspace.workspaceId === selectedId)
+  const presentedSelectedId = selectedWorkspace === undefined
+    ? selectedId
+    : collections.find(collection => collection.matchesPath(selectedWorkspace.path))?.key ?? selectedId
   const getAnchorRect = useCallback(
     () => anchorRef?.current?.getBoundingClientRect() ?? null,
     [anchorRef],
@@ -103,11 +129,11 @@ export function WorkspacePickFlow({
     : []
   // With workspaces listed, the add action pins below the scroll region
   // (divider + always visible); otherwise it IS the menu.
-  const pinAdd = !addOnly && workspaces.length > 0
+  const pinAdd = !addOnly && presentedWorkspaces.length > 0
   const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
+    ? presentedWorkspaces.map(workspace => ({
+      id: workspace.id,
+      label: workspace.label,
       icon: <IconFolderClose16 size={16} />,
       disabled: flowBusy,
     }))
@@ -177,7 +203,14 @@ export function WorkspacePickFlow({
       openDirectoryFlow()
       return
     }
-    onPick(id as WorkspaceId)
+    if (!collections.some(collection => collection.key === id)) {
+      onPick(id as WorkspaceId)
+      return
+    }
+    void resolvePresentedWorkspace(id).then(onPick).catch((reason: unknown) => {
+      setModalError(reason instanceof Error ? reason.message : String(reason))
+      setErrorOpen(true)
+    })
   }
 
   return (
@@ -187,7 +220,7 @@ export function WorkspacePickFlow({
         anchor={null}
         items={items}
         {...pinAdd ? { footer: addEntries } : {}}
-        selectedId={selectedId}
+        selectedId={presentedSelectedId}
         onSelect={handleSelect}
         onClose={onClose}
         side={side}
@@ -230,6 +263,8 @@ export function WorkspacePicker({
   onPick,
   onClose,
   createWorkspace,
+  useWorkspacePresentations,
+  resolvePresentedWorkspace,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -240,6 +275,8 @@ export function WorkspacePicker({
       open={open}
       anchorRef={anchorRef}
       useWorkspaces={useWorkspaces}
+      useWorkspacePresentations={useWorkspacePresentations}
+      resolvePresentedWorkspace={resolvePresentedWorkspace}
       createWorkspace={createWorkspace}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}

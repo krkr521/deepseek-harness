@@ -391,6 +391,23 @@ export interface Config {
 
 Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-codex-native-compaction"></a>
+
+## `@deepseek-ai/dsh-codex-native-compaction`
+
+```ts config-catalog
+/**
+ * Native Codex compaction policy. Every field retains the basic backend's
+ * meaning; the local declaration keeps this plugin's configuration surface
+ * discoverable by repository tooling.
+ */
+export interface Config extends BasicCompactionConfig {}
+```
+
+Depends on: [`BasicCompactionConfig`](#deepseek-aidsh-compaction-basic)
+
+Source: [`packages/compaction/codex-native-compaction/src/index.ts:32`](../packages/compaction/codex-native-compaction/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -1482,6 +1499,62 @@ export interface ReconnectConfig {
 ```
 
 Source: [`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+
+<a id="deepseek-aidsh-memory-curator"></a>
+
+## `@deepseek-ai/dsh-memory-curator`
+
+Requires: `memory` · `llm` · `sessions`
+
+```ts config-catalog
+/** Loader and user-settings configuration. */
+export interface Config {
+  /** Automatically curate durable memories after completed human turns. */
+  enabled?: boolean
+  /** Allow turns that used tools, including MCP and web search, as curation sources. */
+  allowToolSources?: boolean
+  /** Maximum current records supplied to one curation request. */
+  maxExistingRecords?: number
+  /** Maximum UTF-8 bytes in the JSON-framed curation input. */
+  maxInputBytes?: number
+  /** Maximum output tokens for one auxiliary curation call. */
+  maxOutputTokens?: number
+  /** Maximum create or update operations accepted from one call. */
+  maxOperations?: number
+  /** End-to-end deadline for one auxiliary curation call. */
+  timeoutMs?: number
+  /** Optional explicit provider route; must be paired with `model`. */
+  provider?: string
+  /** Optional explicit model id; must be paired with `provider`. */
+  model?: string
+}
+```
+
+Source: [`packages/memory/memory-curator/src/index.ts:31`](../packages/memory/memory-curator/src/index.ts)
+
+<a id="deepseek-aidsh-memory-local"></a>
+
+## `@deepseek-ai/dsh-memory-local`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Local provider resource and input limits. */
+export interface Config {
+  /** Maximum records retained by this provider. */
+  maxRecords?: number
+  /** Maximum UTF-8 byte length of one memory text. */
+  maxTextBytes?: number
+  /** Maximum tags on one record or filter. */
+  maxTags?: number
+  /** Maximum UTF-8 byte length of one tag. */
+  maxTagBytes?: number
+  /** Maximum results one service search may request. */
+  maxSearchResults?: number
+}
+```
+
+Source: [`packages/memory/memory-local/src/index.ts:32`](../packages/memory/memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2765,6 +2838,26 @@ export interface Config {
 
 Source: [`packages/lsp/tool-lsp/src/index.ts:57`](../packages/lsp/tool-lsp/src/index.ts)
 
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+Requires: `memory` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Model-facing Memory configuration. */
+export interface Config {
+  /** Maximum records returned by one search tool call. */
+  maxSearchResults?: number
+  /** Maximum pinned records injected into one runtime-context snapshot. */
+  maxContextRecords?: number
+  /** Maximum UTF-8 bytes contributed by pinned Memory context. */
+  maxContextBytes?: number
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts:23`](../packages/memory/tool-memory/src/index.ts)
+
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -3343,6 +3436,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-memory` ([`packages/client/ui-memory/src/index.ts`](../packages/client/ui-memory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-message-feedback` ([`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
@@ -3396,6 +3490,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
+- `@deepseek-ai/dsh-web-memory` ([`packages/bundle/web-memory/src/index.ts`](../packages/bundle/web-memory/src/index.ts))
 - `@deepseek-ai/dsh-webhook` — requires `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` ([`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
@@ -3411,6 +3506,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-memory` — abstract `MemoryStore` ([`packages/memory/memory/src/index.ts`](../packages/memory/memory/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))

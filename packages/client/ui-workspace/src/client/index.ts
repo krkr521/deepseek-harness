@@ -27,9 +27,13 @@ import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { WorkspacePresentationService } from './presentation.ts'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
+export type {
+  WorkspacePresentation, WorkspacePresentationCollection,
+} from './presentation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
   WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
@@ -70,10 +74,20 @@ export const inject = [
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
+  ctx.plugin(WorkspacePresentationService)
+  ctx.inject(['workspacePresentation'], applyWorkspaceUi)
+}
+
+/**
+ * Install the Workspace UI after its collection registry service is active.
+ * @param ctx - client root context with the presentation service available.
+ */
+function applyWorkspaceUi(ctx: Context): void {
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
+  const workspacePresentation = ctx.workspacePresentation
   const uiWorkspace = new UiWorkspaceService(
-    ctx, ctx.remote.directoryPicker, workspaces, sessions)
+    ctx, ctx.remote.directoryPicker, workspaces, sessions, workspacePresentation)
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
 
@@ -99,6 +113,13 @@ export function apply(ctx: Context): void {
     // Explicit group actions keep their target; unscoped New Session inherits
     // the current Session Workspace before the recent-Workspace fallback.
     startSession: (workspaceId) => { uiWorkspace.startSession(workspaceId) },
+    startPresentedSession: (key) => {
+      void workspacePresentation.resolveWorkspace(key).then(
+        (workspaceId) => { uiWorkspace.startSession(workspaceId) },
+        (reason: unknown) => { console.warn('new session target failed:', reason) },
+      )
+    },
+    resolvePresentedWorkspace: key => workspacePresentation.resolveWorkspace(key),
     open: (sessionId) => { sessions.open(sessionId) },
     searchSessions,
     searchResultLimit: sessions.searchResultLimit,
@@ -127,11 +148,19 @@ export function apply(ctx: Context): void {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
     createWorkspace: input => workspaces.create(input),
-    hooks: { directoryFlow: browserFlowSource, hostInfo },
+    hooks: {
+      directoryFlow: browserFlowSource,
+      hostInfo,
+      workspacePresentations: workspacePresentation.collections,
+    },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),
-    hooks: { directoryFlow: pickerFlowSource },
+    resolvePresentedWorkspace: key => workspacePresentation.resolveWorkspace(key),
+    hooks: {
+      directoryFlow: pickerFlowSource,
+      workspacePresentations: workspacePresentation.collections,
+    },
   })
   // Each registration declares its directory-flow child in the same call;
   // slot injection follows both the owner and declaration HMR lifetimes.

@@ -16,22 +16,23 @@ import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   indexSubagentDescendants, type SubagentDescendantSummary,
 } from './subagent-lineage.ts'
+import type { WorkspacePresentationCollection } from './presentation.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
 
 /**
  * Resolve the Workspace browser group that owns one Session.
- * @param workspaces - authoritative Workspace membership.
+ * @param workspaces - authoritative Workspace membership or derived presentation accounts.
  * @param sessionId - Session whose browser group is required.
- * @returns owning Workspace id, or {@link UNGROUPED_KEY} when no Workspace accounts for it.
+ * @returns owning Workspace or collection key, or {@link UNGROUPED_KEY} when no account owns it.
  */
 export function owningGroupKey(
-  workspaces: readonly WorkspaceView[],
+  workspaces: readonly WorkspaceGroupSource[],
   sessionId: SessionId,
 ): string {
-  return (workspaces.find(workspace => workspace.sessionIds.includes(sessionId))
-    ?.workspaceId as string | undefined) ?? UNGROUPED_KEY
+  const owner = workspaces.find(workspace => workspace.sessionIds.includes(sessionId))
+  return owner === undefined ? UNGROUPED_KEY : accountOf(owner).key
 }
 
 /** Pending interaction kinds with dedicated Workspace-row presentation. */
@@ -62,9 +63,11 @@ export type SessionOrderBy = 'manual' | 'updated'
 
 /** One workspace group section: header row facts + visible top-level session rows. */
 export interface GroupNode {
-  /** Group key: the workspace id or {@link UNGROUPED_KEY}. */
+  /** Group key: a Workspace id, collection key, or {@link UNGROUPED_KEY}. */
   key: string
-  /** Backing Workspace id; absent only for the ungrouped bucket. */
+  /** Host-backed Workspace, UI-only collection, or the ungrouped bucket. */
+  kind: 'workspace' | 'collection' | 'ungrouped'
+  /** Backing Workspace id; absent for a collection and the ungrouped bucket. */
   workspaceId: WorkspaceId | undefined
   cwd: string | undefined
   /** Workspace creation time (epoch ms); absent only for the ungrouped bucket. */
@@ -111,11 +114,107 @@ export interface TreeView {
 
 interface Group {
   key: string
+  kind: GroupNode['kind']
   workspaceId: WorkspaceId | undefined
   cwd: string | undefined
   createdAt: number | undefined
   label: string
   sessions: SessionSummary[]
+}
+
+/** One presentation account before visibility and expansion are projected. */
+export interface WorkspaceAccount {
+  /** Stable presentation identity. */
+  key: string
+  /** Whether the account maps to one Host Workspace or a UI-only collection. */
+  kind: 'workspace' | 'collection'
+  /** Backing Host Workspace id; absent for a collection. */
+  workspaceId: WorkspaceId | undefined
+  /** Directory shown by the hover card. */
+  cwd: string
+  /** Earliest member creation time in epoch milliseconds. */
+  createdAt: number
+  /** Display title. */
+  label: string
+  /** Accounted Session ids in initial display order. */
+  sessionIds: readonly SessionId[]
+}
+
+/**
+ * Replace matching real Workspaces with one UI-only collection account.
+ * Sessions whose retained cwd matches the collection join even when their
+ * former Workspace directory no longer exists.
+ * @param list - session metadata authority.
+ * @param workspaces - real Host Workspaces in stable order.
+ * @param collections - registered UI-only collection policies.
+ * @returns presentation accounts in Host-relative order.
+ */
+export function deriveWorkspaceAccounts(
+  list: SessionListState,
+  workspaces: readonly WorkspaceView[],
+  collections: readonly WorkspacePresentationCollection[],
+): WorkspaceAccount[] {
+  const matchedWorkspaces = new Set<WorkspaceId>()
+  const accounts: WorkspaceAccount[] = []
+  for (const workspace of workspaces) {
+    if (matchedWorkspaces.has(workspace.workspaceId)) continue
+    const collection = collections.find(candidate => candidate.matchesPath(workspace.path))
+    if (collection === undefined) {
+      accounts.push({
+        key: workspace.workspaceId,
+        kind: 'workspace',
+        workspaceId: workspace.workspaceId,
+        cwd: workspace.path,
+        createdAt: Date.parse(workspace.createdAt),
+        label: workspace.title,
+        sessionIds: workspace.sessionIds,
+      })
+      continue
+    }
+    const ids: SessionId[] = []
+    const included = new Set<SessionId>()
+    const include = (id: SessionId): void => {
+      if (included.has(id)) return
+      included.add(id)
+      ids.push(id)
+    }
+    for (const member of workspaces) {
+      if (!collection.matchesPath(member.path)) continue
+      matchedWorkspaces.add(member.workspaceId)
+      for (const id of member.sessionIds) include(id)
+    }
+    for (const id of list.ids) {
+      const summary = list.byId[id]
+      if (summary?.cwd !== undefined && collection.matchesPath(summary.cwd)) include(id)
+    }
+    accounts.push({
+      key: collection.key,
+      kind: 'collection',
+      workspaceId: undefined,
+      cwd: collection.path,
+      createdAt: Math.min(...workspaces
+        .filter(member => collection.matchesPath(member.path))
+        .map(member => Date.parse(member.createdAt))),
+      label: collection.title,
+      sessionIds: ids,
+    })
+  }
+  return accounts
+}
+
+type WorkspaceGroupSource = WorkspaceView | WorkspaceAccount
+
+function accountOf(source: WorkspaceGroupSource): WorkspaceAccount {
+  if ('kind' in source) return source
+  return {
+    key: source.workspaceId,
+    kind: 'workspace',
+    workspaceId: source.workspaceId,
+    cwd: source.path,
+    createdAt: Date.parse(source.createdAt),
+    label: source.title,
+    sessionIds: source.sessionIds,
+  }
 }
 
 /**
@@ -165,6 +264,7 @@ function hasActiveSchedule(session: SessionSummary): boolean {
 /** Build one group without projecting session lineage into presentation. */
 function buildGroup(
   key: string,
+  kind: GroupNode['kind'],
   workspaceId: WorkspaceId | undefined,
   cwd: string | undefined,
   createdAt: number | undefined,
@@ -176,7 +276,7 @@ function buildGroup(
   // Real Workspace order comes from sessionIds. Ungrouped falls back to
   // recency until the browser supplies its persisted local order.
   if (order === 'recency') sessions.sort(byRecency)
-  return { key, workspaceId, cwd, createdAt, label, sessions }
+  return { key, kind, workspaceId, cwd, createdAt, label, sessions }
 }
 
 /** Apply a stored Ungrouped order and append newly loose Sessions by recency. */
@@ -205,13 +305,14 @@ function orderedUngrouped(members: readonly SessionSummary[], stored: readonly s
  */
 function groupByWorkspace(
   list: SessionListState,
-  workspaces: readonly WorkspaceView[],
+  sources: readonly WorkspaceGroupSource[],
   archived: ReadonlySet<SessionId>,
   ungroupedOrder: readonly string[] | undefined,
 ): Group[] {
   const groups: Group[] = []
   const accounted = new Set<SessionId>()
-  for (const workspace of workspaces) {
+  for (const source of sources) {
+    const workspace = accountOf(source)
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
       const summary = list.byId[id]
@@ -221,8 +322,8 @@ function groupByWorkspace(
       members.push(summary)
     }
     groups.push(buildGroup(
-      workspace.workspaceId, workspace.workspaceId, workspace.path,
-      Date.parse(workspace.createdAt), workspace.title, members, 'account',
+      workspace.key, workspace.kind, workspace.workspaceId, workspace.cwd,
+      workspace.createdAt, workspace.label, members, 'account',
     ))
   }
   const stray = list.ids
@@ -232,6 +333,7 @@ function groupByWorkspace(
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,
+      'ungrouped',
       undefined,
       undefined,
       undefined,
@@ -291,7 +393,7 @@ function sessionNode(
  */
 export function deriveGroups(
   list: SessionListState,
-  workspaces: readonly WorkspaceView[],
+  workspaces: readonly WorkspaceGroupSource[],
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
   view: TreeView,
@@ -307,6 +409,7 @@ export function deriveGroups(
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
+      kind: g.kind,
       workspaceId: g.workspaceId,
       cwd: g.cwd,
       createdAt: g.createdAt,
@@ -364,7 +467,7 @@ export function deriveFlat(
  */
 export function deriveSearchResults(
   list: SessionListState,
-  workspaces: readonly WorkspaceView[],
+  workspaces: readonly WorkspaceGroupSource[],
   query: string,
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
@@ -377,9 +480,10 @@ export function deriveSearchResults(
   const descendants = indexSubagentDescendants(list.byId)
 
   const workspaceBySession = new Map<SessionId, string>()
-  for (const workspace of workspaces) {
+  for (const source of workspaces) {
+    const workspace = accountOf(source)
     for (const sessionId of workspace.sessionIds) {
-      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.title)
+      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.label)
     }
   }
   const labelOf = (summary: SessionSummary): string =>

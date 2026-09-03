@@ -5,9 +5,10 @@ import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-s
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, owningGroupKey, workspaceLabel,
+  deriveFlat, deriveGroups, deriveSearchResults, deriveWorkspaceAccounts, owningGroupKey, workspaceLabel,
   UNGROUPED_KEY,
 } from '../src/client/tree.ts'
+import type { WorkspacePresentationCollection } from '../src/client/presentation.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
 const sid = (id: string) => id as SessionId
@@ -49,6 +50,54 @@ describe('owningGroupKey', () => {
 })
 
 describe('deriveGroups', () => {
+  it('presents monthly default-chat Workspaces and retained cwd sessions as one collection', () => {
+    const augustPath = 'C:\\Users\\sample-user\\.dsh\\default-chats\\2026-8'
+    const septemberPath = 'C:\\Users\\sample-user\\.dsh\\default-chats\\2026-9'
+    const legacyPath = 'C:\\Users\\legacy-user\\.dsh\\default-chats\\2026-8'
+    const sessions = {
+      ...list(
+        summary('august', 1, augustPath),
+        summary('september', 3, septemberPath),
+        summary('legacy', 2, legacyPath),
+        summary('project', 4, '/projects/repo'),
+      ),
+      current: sid('legacy'),
+    }
+    const monthWorkspace = (id: string, path: string, sessionIds: string[]): WorkspaceView => ({
+      ...workspace(id, sessionIds, `聊天 · ${id}`), path,
+    })
+    const collection: WorkspacePresentationCollection = {
+      key: 'default-chat',
+      title: '聊天',
+      path: 'C:\\Users\\sample-user\\.dsh\\default-chats',
+      matchesPath: path => /[\\/]\.dsh[\\/]default-chats[\\/]\d{4}-(?:[1-9]|1[0-2])$/.test(path),
+      resolveWorkspace: async () => wid('september'),
+    }
+    const accounts = deriveWorkspaceAccounts(sessions, [
+      monthWorkspace('september', septemberPath, ['september']),
+      monthWorkspace('august', augustPath, ['august']),
+      { ...workspace('repo', ['project'], 'Repo'), path: '/projects/repo' },
+    ], [collection])
+
+    expect(accounts.map(account => [account.key, account.kind])).toEqual([
+      ['default-chat', 'collection'],
+      ['repo', 'workspace'],
+    ])
+    expect(accounts[0]!.sessionIds).toEqual([sid('september'), sid('august'), sid('legacy')])
+    expect(owningGroupKey(accounts, sid('legacy'))).toBe('default-chat')
+    expect(owningGroupKey(accounts, sid('september'))).toBe('default-chat')
+    const groups = deriveGroups(
+      sessions, accounts, noArchive, noAttention, view(['default-chat', 'repo']),
+    )
+    expect(groups[0]).toMatchObject({
+      key: 'default-chat', kind: 'collection', label: '聊天', containsCurrent: true, sessionCount: 3,
+    })
+    expect(groups.some(group => group.key === UNGROUPED_KEY)).toBe(false)
+    expect(deriveSearchResults(
+      sessions, accounts, '聊天', noArchive, noAttention, { items: [], hasMore: false }, 10,
+    ).items.map(item => item.workspace)).toEqual(['聊天', '聊天', '聊天'])
+  })
+
   it('keeps Host Workspace and sessionIds order without Client recency sorting', () => {
     const sessions = list(summary('newer', 20), summary('older', 10))
     const workspaces = [workspace('first', ['older', 'newer']), workspace('empty', [])]
