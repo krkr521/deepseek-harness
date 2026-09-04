@@ -11,7 +11,7 @@ kind: "package-reference"
 
 这是一个可选启用的 Consumer，会在人工聊天轮次完成后整理原生 Memory。`memory-curator` 设置命名空间提供两个实时开关：`enabled` 启动自动整理，`allowToolSources` 允许使用过工具（包括 MCP 与网页搜索）的轮次成为来源。第二个开关关闭时，只要轮次中含有 `tool/call` 或 `tool/result`，整轮都会跳过，因此由工具结果派生的助手文本也不能绕过来源策略。
 
-Consumer 会从刚完成的轮次中选择直接人工消息、可见助手文本，以及仅在允许时选择工具调用与结果；再把这些来源和当前可访问的全局、精确工作区记录交给一次有界辅助 LLM 请求。严格 JSON 结果只能创建记录或按 revision 更新记录，输出词汇中没有删除。记录校验、作用域授权、持久化与变更事件仍由 `ctx.memory` 负责。
+Consumer 从已提交的 `assistant/message` 事件读取可见助手文本，并排除仅记入日志的 `assistant/attempt` 流。它会从刚完成的轮次中选择直接人工消息、可见助手文本，以及仅在允许时选择工具调用与结果；再把这些来源和当前可访问的全局、精确工作区记录交给一次有界辅助 LLM 请求。严格 JSON 结果只能创建记录或按 revision 更新记录，输出词汇中没有删除。记录校验、作用域授权、持久化与变更事件仍由 `ctx.memory` 负责。
 
 分发前，Consumer 会追加 `memory/curation-request`，记录确切路由、系统提示词、消息列表、来源事件 seq、来源策略值和输出上限。所有操作成功后，`memory/curation-applied` 会记录对应请求 seq 和已接受操作。请求携带 `GenerateOptions.purpose: 'memory-curation'`；DeepSeek 适配器会为该用途禁用思考。失败会在用户轮次已经结束后被隔离并记录。插件 fiber 卸载时会等待已经开始的整理任务结束。
 
@@ -72,6 +72,8 @@ Update operation: {"kind":"update","id":"...","expectedRevision":1,"text":"...",
 
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓工作
+
+本包不发布运行时不变量伴随插件，因为Session 与 Memory 的拥有者校验整理器产生的持久变更。
 
 - 整理只了解词法记录，不使用 embedding；去重时只能看到最新的有界可访问记录。
 - 自动删除被明确排除。用户或显式模型工具使用当前 revision 删除记录。

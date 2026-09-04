@@ -31,6 +31,8 @@ kind: "package-bundle"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓工作
 
+不发布运行时不变量伴随模块：本 bundle 仅提供静态补丁列表，运行时状态由插入的插件负责。
+
 - 此 bundle 仅面向 Web，必须叠加在 `dsh-web-app` 之后；它不是独立 profile。
 - 从部署中移除 bundle 不会删除 Storage Domain 数据。重新安装后会再次打开同一批本地记录。
 

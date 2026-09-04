@@ -111,7 +111,7 @@ function appendHeader(session: NonNullable<Harness['currentSession']>): void {
   })
 }
 
-function completeTextTurn(h: Harness, turn: number, text: string): void {
+function completeTextTurn(h: Harness, turn: number, text: string, failedAttemptText?: string): void {
   const session = h.currentSession ??= h.ctx.sessions.create(
     SessionId(`memory-curator-${randomUUID()}`),
     { meta: { cwd: resolve('workspace') } },
@@ -123,7 +123,15 @@ function completeTextTurn(h: Harness, turn: number, text: string): void {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   appendHeader(session)
+  if (failedAttemptText !== undefined) {
+    session.append('assistant/attempt', {
+      turn,
+      step: 1,
+      stream: [{ type: 'text-chunks', time0: 0, index: 0, dt: [0], texts: [failedAttemptText] }],
+    })
+  }
   session.append('assistant/message', {
+    stream: [],
     turn,
     step: 1,
     message: createAssistantMessage({
@@ -149,6 +157,7 @@ function completeToolTurn(h: Harness, turn: number): void {
   }), { surfaceOp: 'append' })
   appendHeader(session)
   session.append('assistant/message', {
+    stream: [],
     turn,
     step: 1,
     message: createAssistantMessage({
@@ -171,6 +180,7 @@ function completeToolTurn(h: Harness, turn: number): void {
   session.append('step/end', { turn, step: 1 })
   session.append('step/start', { turn, step: 2 })
   session.append('assistant/message', {
+    stream: [],
     turn,
     step: 2,
     message: createAssistantMessage({
@@ -212,6 +222,22 @@ describe('automatic Memory curation', () => {
           kind: 'create', scope: 'global', text: 'User prefers concise replies.', tags: ['preference'], pinned: false,
         }],
       })
+  })
+
+  it('excludes settled failed attempts from curation sources', async () => {
+    const h = await harness([JSON.stringify({ operations: [] })])
+    completeTextTurn(h, 1, 'Keep replies concise.', 'Discarded retry text must not become memory.')
+
+    await vi.waitFor(() => { expect(h.adapter.settled).toBe(1) })
+    const framed = h.adapter.requests[0]?.messages[0]?.content[0]
+    expect(framed?.type === 'text' && framed.text).toContain('Keep replies concise.')
+    expect(framed?.type === 'text' && framed.text).toContain('Understood.')
+    expect(framed?.type === 'text' && framed.text).not.toContain('Discarded retry text')
+    const attempt = h.currentSession?.snapshotEvents().find(event => event.type === 'assistant/attempt')
+    const request = h.currentSession?.snapshotEvents().find(event => event.type === 'memory/curation-request')
+    expect(attempt).toBeDefined()
+    expect(request?.type === 'memory/curation-request' && request.data.sourceEventSeqs)
+      .not.toContain(attempt?.seq)
   })
 
   it('excludes whole tool-bearing turns until the separate source switch is enabled', async () => {

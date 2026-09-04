@@ -29,6 +29,8 @@ Defined by the two Consumer packages above.
 
 ## Known Limitations and Deferred Work
 
+No runtime invariant companion is published: this bundle owns a static patch list; the inserted plugins own their runtime state.
+
 - This bundle is Web-specific and must be layered after `dsh-web-app`; it is not a standalone profile.
 - Deployment removal leaves the Storage Domain data intact. Reinstalling the bundle reopens the same local records.
 

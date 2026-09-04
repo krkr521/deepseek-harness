@@ -97,6 +97,8 @@ The auxiliary request preserves the conversation's system, tools, and selected-m
 
 ## Known Limitations and Deferred Work
 
+No runtime invariant companion is published because provider-state admission and the inherited compaction transaction enforce the live relationships at their owners.
+
 - Native checkpoints are not portable across providers. Changing a compacted session from `codex` to another provider fails before dispatch.
 - Model-to-model compatibility within the Codex provider is controlled by the remote Responses implementation. This package preserves the item losslessly but does not decrypt or reinterpret it.
 - Generic clients that do not understand `codex-compaction` may need a presentation fallback; the durable session remains valid because the block uses the merge-extensible LLM content vocabulary.

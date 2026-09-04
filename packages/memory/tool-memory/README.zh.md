@@ -101,6 +101,8 @@ assistant 调用会保留提交的查询或变更字段。结果会保留匹配�
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延后工作
 
+本包不发布运行时不变量伴随插件，因为此 Consumer 投影经 Provider 校验的记录，不拥有独立可变状态。
+
 - 可选的自动对话整理由 [`dsh-memory-curator`](../memory-curator/README.zh.md) 负责；此包的写入、更新与遗忘工具仍保留显式请求策略。
 - 当前没有记录管理界面或秘密检测器；控制面是 Memory 设置开关、显式模型工具与提示词策略。
 - 置顶目前是布尔值。优先级、过期、按 agent 作用域和 token 感知的语义选择均延后。

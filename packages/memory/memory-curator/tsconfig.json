@@ -10,7 +10,6 @@
   "references": [
     { "path": "../../core/session" },
     { "path": "../../llm/llm" },
-    { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../../settings/settings" },
     { "path": "../../storage/storage" },
     { "path": "../../storage/storage-domain" },

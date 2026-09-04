@@ -98,6 +98,7 @@ function conversation(provider: 'codex' | 'other' = 'codex'): Session {
       })
     }
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createMessage({

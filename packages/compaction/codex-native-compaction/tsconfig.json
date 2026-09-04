@@ -29,9 +29,6 @@
     },
     {
       "path": "../compaction-basic"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

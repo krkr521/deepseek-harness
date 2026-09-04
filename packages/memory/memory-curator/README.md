@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 Opt-in Consumer that curates native Memory after a completed human turn. The `memory-curator` settings namespace exposes two live switches: `enabled` starts automatic curation, while `allowToolSources` admits turns that used tools, including MCP and web search. When the second switch is off, any turn containing `tool/call` or `tool/result` is skipped in full, so assistant text derived from that result cannot bypass the source policy.
 
-The Consumer selects direct human messages, visible assistant text, and—only when admitted—tool calls and results from the just-completed turn. It supplies those sources plus the latest accessible global and exact-workspace records to one bounded auxiliary LLM request. The strict JSON result may create or revision-check update records; deletion is not in the output vocabulary. Record validation, scope enforcement, durability, and mutation events remain owned by `ctx.memory`.
+The Consumer reads visible assistant text from committed `assistant/message` events and excludes log-only `assistant/attempt` streams. It selects direct human messages, visible assistant text, and—only when admitted—tool calls and results from the just-completed turn. It supplies those sources plus the latest accessible global and exact-workspace records to one bounded auxiliary LLM request. The strict JSON result may create or revision-check update records; deletion is not in the output vocabulary. Record validation, scope enforcement, durability, and mutation events remain owned by `ctx.memory`.
 
 Before dispatch, the Consumer appends `memory/curation-request` with the exact route, system prompt, message list, source event seqs, source-policy value, and output cap. After every operation succeeds, `memory/curation-applied` records the matching request seq and accepted operations. The request uses `GenerateOptions.purpose: 'memory-curation'`; the DeepSeek adapter disables thinking for that purpose. Failures are contained and logged after the user turn has already completed. The package waits for curation already in progress when its plugin fiber disposes.
 
@@ -69,6 +69,8 @@ One auxiliary request per eligible completed turn while enabled. Input is capped
 The fixed system prompt is prefix-stable. The framed memory and turn data change per call, so their suffix is not expected to reuse a cache. Conversation-request cache prefixes are unchanged by the curator call itself.
 
 ## Known Limitations and Deferred Work
+
+No runtime invariant companion is published because Session and Memory owners validate the curator's durable mutations.
 
 - Curation is lexical-record aware rather than embedding-backed; only the latest bounded accessible records are available for deduplication.
 - Automatic deletion is deliberately absent. Users or explicit model tools remove a record with its current revision.

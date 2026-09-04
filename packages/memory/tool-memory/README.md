@@ -98,6 +98,8 @@ Append-only history preserves prior prefix reuse; later calls and results extend
 
 ## Known Limitations and Deferred Work
 
+No runtime invariant companion is published because this Consumer projects provider-validated records without owning independent mutable state.
+
 - Optional automatic conversation curation is owned by [`dsh-memory-curator`](../memory-curator/README.md); this package's write/update/forget tools retain their explicit-request policy.
 - There is no record-management screen or secret detector; current controls are the Memory settings switches plus explicit model tools and prompt policy.
 - Pinning is boolean. Priority, expiry, per-agent scope, and token-aware semantic selection are deferred.

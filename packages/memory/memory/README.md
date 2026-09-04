@@ -29,6 +29,8 @@ None; the Service Definition never assembles a model request.
 
 ## Known Limitations and Deferred Work
 
+No runtime invariant companion is published because the Service Definition owns types and obligations, while providers own mutable state.
+
 - The contract has no automatic curator, embedding API, expiration field, or namespace beyond global and exact workspace scopes.
 - Authorization belongs to each Consumer; direct trusted callers receive the scopes they request.
 

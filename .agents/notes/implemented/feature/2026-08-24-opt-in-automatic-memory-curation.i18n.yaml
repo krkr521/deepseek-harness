@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-opt-in-automatic-memory-curation.md
-2026-08-24-opt-in-automatic-memory-curation.md: 2ac1738a0941051f68451e4ce03368ae07bb8a00
-2026-08-24-opt-in-automatic-memory-curation.zh.md: 87b0845c83d708acee3becaa980844179a73b96c
+2026-08-24-opt-in-automatic-memory-curation.md: 49b493356c5f9cde23bfd20c8c65e08872638aa9
+2026-08-24-opt-in-automatic-memory-curation.zh.md: d5afc6619c29c4bf1c2f673eb962bb56333359b7

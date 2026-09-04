@@ -14,7 +14,7 @@
 
 `@deepseek-ai/dsh-memory-curator` 是消费 `ctx.memory`、`ctx.llm` 与 Session 事件的兄弟 Consumer。它的 `memory-curator` 设置 section 实时生效，并包含两个独立布尔值。默认关闭的 `enabled` 启动轮次后整理。默认关闭的 `allowToolSources` 允许含有 `tool/call` 或 `tool/result` 的轮次；关闭时会跳过整个工具轮次。整轮排除是权限规则，因为可见助手文本可能已经来自工具输出。
 
-Consumer 只处理已完成轮次，并把工作推迟到下一个 microtask，因此不会从 `session/event` 观察方重入 `Session.append`。它选择直接人工消息和可见助手文本；允许的工具轮次还会包含工具名称、参数和可见结果文本。框架会包含当前 Session 的全局和精确 cwd 作用域内最新的有界记录。
+Consumer 只处理已完成轮次，并把工作推迟到下一个 microtask，因此不会从 `session/event` 观察方重入 `Session.append`。它选择直接人工消息和已提交的 `assistant/message` 事件中的可见助手文本；仅记入日志的 `assistant/attempt` 流不会成为整理来源。允许的工具轮次还会包含工具名称、参数和可见结果文本。框架会包含当前 Session 的全局和精确 cwd 作用域内最新的有界记录。
 
 分发前，Consumer 会追加 `memory/curation-request`，包含来源 seq、来源策略值、路由、固定系统提示词、确切消息列表和输出上限。请求携带 `GenerateOptions.purpose: 'memory-curation'`；DeepSeek 会为该用途禁用思考。调用具有字节、记录、token、操作数与期限限制。成对配置的 provider/model 会覆盖最近记录的对话路由。
 

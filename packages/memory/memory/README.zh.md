@@ -31,6 +31,8 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延后工作
 
+本包不发布运行时不变量伴随插件，因为Service Definition 负责类型与约定，可变状态由 Provider 负责。
+
 - 本契约没有自动整理器、向量嵌入 API、过期字段，也没有全局与精确工作区之外的命名空间。
 - 权限属于各 Consumer；直接的受信调用方可读取自己请求的作用域。
 

@@ -31,6 +31,8 @@ None from this package.
 
 ## Known Limitations and Deferred Work
 
+No runtime invariant companion is published: this page owns no independent persistent state; the Host settings service owns revisions and persistence.
+
 - Record-by-record browsing and editing remain available through native Memory tools rather than this page.
 - The page is shown only when its optional Loader row is composed; an unavailable Host namespace renders a diagnostic instead of inert switches.
 

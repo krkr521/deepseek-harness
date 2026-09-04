@@ -33,6 +33,8 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓工作
 
+不发布运行时不变量伴随模块：该页面没有独立持久状态，修订号和持久化由 Host 设置服务负责。
+
 - 逐条浏览和编辑记录目前通过原生 Memory 工具完成，而不在此页面中提供。
 - 只有组合了可选 Loader 行时才会显示页面；Host 命名空间不可用时会显示诊断，而非无效开关。
 
