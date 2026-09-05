@@ -51,6 +51,13 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 // Side-effect type import: declaration-merges the approval waterfall answered below.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { supportsAcpImagePrompts } from './content.ts'
+import {
+  DSH_SUBAGENT_ACTIVITY_METHOD,
+  DSH_SUBAGENT_LIST_METHOD,
+  dshSubagentExtensionMetadata,
+  handleDshSubagentExtension,
+  parseDshSubagentExtensionParams,
+} from './extensions.ts'
 import { AcpMcpConfigError } from './mcp.ts'
 import { AcpModelConfigError } from './model-control.ts'
 import { AcpSession } from './session.ts'
@@ -103,6 +110,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
   let closed = false
+  let subagentExtensionsEnabled = false
   let imagePromptEnabled = false
 
   /** Return the bridge-owned record for an agent, rejecting same-id impostors. */
@@ -173,10 +181,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
   })
 
   const implementation = {
-    async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
+    async initialize(params: InitializeRequest): Promise<InitializeResponse> {
       // Single-version agent: the spec's "same version if supported, else
       // the latest supported" both resolve to this server's one version.
       imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
+      const extensionMetadata = dshSubagentExtensionMetadata(ctx, params._meta)
+      subagentExtensionsEnabled = extensionMetadata !== undefined
       return {
         protocolVersion: PROTOCOL_VERSION,
         agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' },
@@ -186,6 +196,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           sessionCapabilities: { close: {}, list: {}, resume: {} },
         },
         authMethods: [],
+        ...(extensionMetadata === undefined ? {} : { _meta: extensionMetadata }),
       }
     },
 
@@ -368,6 +379,14 @@ export function apply(ctx: Context, config: AcpConfig): void {
       sessions.get(brandString<SessionId>(params.sessionId))?.cancel()
       return Promise.resolve()
     },
+
+    subagentExtension(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+      assertOpen()
+      if (!subagentExtensionsEnabled) throw RequestError.methodNotFound(method)
+      return handleDshSubagentExtension(ctx, method, params, (rootSessionId) => {
+        requireSession(rootSessionId)
+      })
+    },
   }
 
   /* v8 ignore next 4 -- production stdio wiring; tests inject config.stream. */
@@ -387,7 +406,14 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.close, ({ params }) => implementation.closeSession(params))
     .onRequest(methods.agent.session.setConfigOption, ({ params, signal }) => implementation.setSessionConfigOption(params, signal))
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
+    // The SDK awaits unmatched handlers; keep extensions behind prompt cancellation.
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
+    .onRequest(DSH_SUBAGENT_LIST_METHOD, parseDshSubagentExtensionParams, ({ params }) => (
+      implementation.subagentExtension(DSH_SUBAGENT_LIST_METHOD, params)
+    ))
+    .onRequest(DSH_SUBAGENT_ACTIVITY_METHOD, parseDshSubagentExtensionParams, ({ params }) => (
+      implementation.subagentExtension(DSH_SUBAGENT_ACTIVITY_METHOD, params)
+    ))
   const connection = app.connect(stream)
   const conn: AgentContext = connection.client
 

@@ -40,6 +40,15 @@
     },
     {
       "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../subagent/subagent"
     }
   ]
 }

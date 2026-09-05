@@ -23,8 +23,10 @@ import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, St
 import { type GenerateOptions, LlmAdapter, ReasoningEffortId, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import SessionQuerySqlite from '@deepseek-ai/dsh-session-query-sqlite'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import * as AcpPlugin from '../src/index.ts'
 import type { AcpConfig } from '../src/index.ts'
@@ -193,6 +195,7 @@ interface BridgeClient {
   setSessionConfigOption: NonNullable<AcpAgent['setSessionConfigOption']>
   prompt: (params: PromptRequest, options?: SendRequestOptions) => Promise<PromptResponse>
   cancel: NonNullable<AcpAgent['cancel']>
+  extMethod: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>
 }
 
 export interface BridgeHarness {
@@ -226,6 +229,7 @@ export async function makeBridgeHarness(options: {
   imageCapable?: boolean
   attachments?: boolean
   persistenceRoot?: string
+  subagents?: boolean
 } = {}): Promise<BridgeHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
   const ctx = new Context()
@@ -240,6 +244,10 @@ export async function makeBridgeHarness(options: {
   await ctx.plugin(TokenMeter)
   if (options.attachments !== false) await ctx.plugin(MemoryAttachmentStore)
   const loopFiber = await ctx.plugin(AgentLoop, { agents: [] })
+  if (options.subagents === true) {
+    await ctx.plugin(SessionQuerySqlite, { path: ':memory:', openAt: 'never' })
+    await ctx.plugin(SubagentRuntime)
+  }
   const primaryAdapter = ctx.llm.registerAdapter(['mock'], adapter)
 
   const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
@@ -309,6 +317,7 @@ export async function makeBridgeHarness(options: {
     setSessionConfigOption: params => client.request(methods.agent.session.setConfigOption, params),
     prompt: (params, options) => client.request(methods.agent.session.prompt, params, options),
     cancel: params => client.notify(methods.agent.session.cancel, params),
+    extMethod: (method, params) => client.request<Record<string, unknown>, Record<string, unknown>>(method, params),
   }
   return harness
 }

@@ -251,6 +251,55 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
+  it('installs per-Agent definitions for every Agent from a Host mount', async () => {
+    const ctx = await boot()
+    const beforeMount = await ctx.agents.create({ sessionId: SessionId('host-before-mount') })
+    expect(selectable(ctx, beforeMount.agent)).toBe(false)
+
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
+    await ctx.plugin(tool, {
+      provider: 'spawn',
+      modelSelectionSettings: true,
+      backgroundMode: 'continuable',
+    })
+    expect(selectable(ctx, beforeMount.agent)).toBe(true)
+
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
+    const afterMount = await ctx.agents.create({ sessionId: SessionId('host-after-mount') })
+    expect(selectable(ctx, afterMount.agent)).toBe(false)
+    expect(selectable(ctx, beforeMount.agent)).toBe(true)
+
+    await afterMount.dispose()
+    await beforeMount.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('activates a Host mount when its settings owner loads later', async () => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings)
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+    await ctx.plugin(tool, {
+      provider: 'spawn',
+      modelSelectionSettings: true,
+      backgroundMode: 'continuable',
+    })
+    await ctx.plugin(SubagentModelSelectionConfig, { enabled: true, allowedModels: ALLOWED_MODELS })
+
+    const handle = await ctx.agents.create({ sessionId: SessionId('host-late-settings') })
+    expect(selectable(ctx, handle.agent)).toBe(true)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, handle.agent.session)).toEqual(ALLOWED_MODELS)
+
+    await handle.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('releases a shared-preset installation reservation after policy selection fails', async () => {
     const ctx = await boot()
     const preset = createScope(ctx, { preset: 'standard' })
@@ -324,29 +373,20 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
-  it('requires both the Host setting owner and a composition scope', async () => {
+  it('requires the Host setting owner', async () => {
     const withoutSettings = new Context()
     await mountAgentLoopTestDependencies(withoutSettings)
     await withoutSettings.plugin(SessionProjectionRegistry)
+    await withoutSettings.plugin(AgentLoop, { agents: [] })
     await withoutSettings.plugin(SubagentRuntime)
-    expect(() => {
-      tool.apply(withoutSettings, {
-        provider: 'missing',
-        modelSelectionSettings: true,
-        maxDepth: 'provider-managed',
-      })
-    }).toThrow('requires @deepseek-ai/dsh-tool-subagent/model-selection-settings')
+    tool.apply(withoutSettings, {
+      provider: 'missing',
+      modelSelectionSettings: true,
+      maxDepth: 'provider-managed',
+    })
+    await expect(withoutSettings.agents.create({ sessionId: SessionId('missing-settings-owner') }))
+      .rejects.toThrow('requires @deepseek-ai/dsh-tool-subagent/model-selection-settings')
     await withoutSettings.fiber.dispose()
-
-    const withoutAgent = await boot()
-    expect(() => {
-      tool.apply(withoutAgent, {
-        provider: 'spawn',
-        modelSelectionSettings: true,
-        backgroundMode: 'continuable',
-      })
-    }).toThrow('requires an Agent or preset scope')
-    await withoutAgent.fiber.dispose()
   })
 
   it('checks model-selectable definitions without rejecting a policy-only preset', async () => {

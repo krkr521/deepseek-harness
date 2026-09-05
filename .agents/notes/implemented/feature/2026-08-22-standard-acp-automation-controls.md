@@ -6,17 +6,19 @@ English | [中文](2026-08-22-standard-acp-automation-controls.zh.md)
 
 > This note supersedes only the prompt-only protocol inventory in [ACP as an automation-only protocol](../simplification/2026-07-23-acp-automation-only-protocol.md). That decision's prohibition on ACP becoming a second product UI remains authoritative.
 
+> The standard lifecycle, configuration, MCP, cancellation, permission, and semantic-update decisions remain current. [ACP subagent observability extensions](../architecture/2026-08-30-acp-subagent-observability-extensions.md) supersedes only this note's blanket exclusion of custom methods and metadata by adding a separately negotiated, read-only view of DSH session-backed subagents.
+
 ## Problem
 
 The automation-only ACP bridge could create a fresh session, submit one prompt at a time, cancel it, receive committed assistant messages, and answer one-shot permission requests. A generic external automation controller still needed private process knowledge to discover models, attach MCP servers, find durable sessions after restart, resume them, close one session independently, and observe reasoning, tool, or context-pressure progress. Reproducing those controls in an integration-specific runtime would make ACP nominally interoperable while leaving DSH automation dependent on a private side protocol.
 
-The stable ACP v1 protocol already defines the required control vocabulary. Adding private `_meta`, custom methods, use-case-specific environment handling, or presentation projections would fragment that vocabulary and revive the UI coupling removed by the automation-only decision.
+The stable ACP v1 protocol already defines the required control vocabulary. Adding private lifecycle, configuration, MCP, cancellation, permission, or semantic-update controls would fragment that vocabulary and revive the UI coupling removed by the automation-only decision. ACP does not define DSH session-backed subagent identity or event logs, so their separately negotiated read-only observation methods do not replace a standard control.
 
 ## Decision
 
 `@deepseek-ai/dsh-acp` implements the complete standard ACP v1 automation subset needed by a generic controller: `session/new`, `session/list`, `session/resume`, `session/close`, `session/prompt`, `session/cancel`, `session/set_config_option`, JSON-RPC `$/cancel_request`, `session/update`, and `session/request_permission`. It uses `@agentclientprotocol/sdk` 1.4's app/context interface on both sides of every in-repository connection.
 
-Capabilities omit unsupported methods and features. DSH adds no custom method, capability flag, or `_meta`, and assigns no private meaning to client metadata. `session/load`, `session/delete`, `session/fork`, additional directories, SSE and ACP-transport MCP, modes, commands, plans, terminals, client filesystem operations, and elicitation remain unsupported. Session controls and semantic updates are protocol data for automation; they do not make ACP a human UI.
+Capabilities omit unsupported methods and features. DSH assigns no private meaning to standard capability fields or controls; a client may separately opt into the namespaced subagent observation metadata and methods. `session/load`, `session/delete`, `session/fork`, additional directories, SSE and ACP-transport MCP, modes, commands, plans, terminals, client filesystem operations, and elicitation remain unsupported. Session controls and semantic updates are protocol data for automation; they do not make ACP a human UI.
 
 ## Per-session ownership
 
@@ -50,13 +52,13 @@ ACP clients are trusted controllers: a stdio declaration authorizes process exec
 
 Only committed durable facts reach `session/update`. Assistant text/images become `agent_message_chunk`; reasoning becomes `agent_thought_chunk`; tool calls/results become generic `tool_call` and `tool_call_update`; known measured context pressure and capacity become `usage_update`; adapter topology changes become `config_option_update`. Durable message ids and tool-call ids preserve correlation. The canonical DSH tool name is the standard tool-call title.
 
-The per-session chain serializes all updates and drains before prompt completion. A tool-call notification drains before a permission request refers to it. Raw model deltas, retry attempts, cards, terminal state, diffs, locations, plans, titles, todos, and unsupported content stay off the wire.
+The per-session chain serializes all standard updates and drains before prompt completion. A tool-call notification drains before a permission request refers to it. Raw model deltas, retry attempts, cards, terminal state, diffs, locations, plans, titles, todos, and unsupported content stay off `session/update`; the opted-in subagent activity method returns a filtered durable child event page rather than adding those records to the parent stream.
 
 `session/cancel` and `$/cancel_request` enter the same prompt-owned cancellation path. Correlated endings map only to standard stop reasons and JSON-RPC errors; a model output limit reports `max_tokens`. ACP returns no additional DSH result structure.
 
 ## Alternatives considered
 
-**Add a private controller extension.** Rejected because standard ACP v1 already carries the required lifecycle, configuration, MCP, cancellation, permission, and semantic-update concepts. A private extension would make generic SDK clients incomplete.
+**Add a private controller extension for standard controls.** Rejected because standard ACP v1 already carries lifecycle, configuration, MCP, cancellation, permission, and semantic-update concepts. DSH subagent observation is distinct: ACP has no portable subagent-session identity or event-log method, and generic clients remain complete without opting into it.
 
 **Restore the former editor projection.** Rejected because plans, terminals, diffs, cards, navigation, and human elicitation are presentation responsibilities. Semantic tool and reasoning facts are useful automation telemetry without importing presentation modules.
 
@@ -68,7 +70,7 @@ The per-session chain serializes all updates and drains before prompt completion
 
 ## Verification
 
-Focused tests cover exact capability advertisement without private metadata; model/reasoning choices, invalid and concurrent mutation, topology updates, and image-route pinning; stdio/HTTP MCP setup, declaration rollback, scope isolation, resume, and disposal; list pagination, canonical workspace checks, active conflicts, close/resume, and restart recovery; message/thought/tool/usage order and ids; tool-before-permission order; standard stop reasons; request and session cancellation; and connection-loss teardown.
+Focused tests cover exact standard capability advertisement without private metadata for generic initialization; model/reasoning choices, invalid and concurrent mutation, topology updates, and image-route pinning; stdio/HTTP MCP setup, declaration rollback, scope isolation, resume, and disposal; list pagination, canonical workspace checks, active conflicts, close/resume, and restart recovery; message/thought/tool/usage order and ids; tool-before-permission order; standard stop reasons; request and session cancellation; and connection-loss teardown. The subagent observability note owns its opt-in metadata and custom-method coverage.
 
 A generic keyless conformance test boots the real ACP demo twice and uses only the public ACP SDK to select a model and reasoning effort, attach an MCP server, execute a tool turn, observe standard updates, close, restart, list, resume, and cancel. It contains no integration-specific names, dependencies, metadata, or environment behavior.
 

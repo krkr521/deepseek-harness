@@ -28,6 +28,10 @@ kind: "package-bundle"
 
 随附配置项使用 `deepseek-official` 与 `deepseek-v4-flash` 创建 session；后续 patch 可以替换该配置项的完整 config。base profile 负责适配器、工具、持久化、策略、settings 与 credentials；ACP client 为每个 session 提供工作区。
 
+该 profile 为进程内 spawn 工具挂载 Host 自有的 `subagent-model-selection` 设置。ACP bridge 会先等待该设置的初始持久值，再接受 session，因此并发插件启动不会让新 Session 错误取样默认值。该设置用非空精确路由允许列表启用后，每个新顶层 Session 会获得 `list_subagent_models`，以及委派工具上的 `provider`、`model` 与 `reasoning_effort` 字段。一次委派必须同时提供 `provider` 与 `model`，执行器会在创建子级前拒绝不在 Session 允许列表内的路由。已有与恢复的 Session 保留其已记录决定。
+
+在 Windows 上，该 profile 显式选择受限 PowerShell 执行器与 `pwsh` 工具。Git Bash 依赖的 Cygwin 进程初始化会被 Windows ACL 沙箱令牌拒绝，因此随附 ACP 组合不公开它。POSIX 主机继续使用受限 Bash 执行器与 `bash` 工具。
+
 -----
 
 <a id="standard-automation-workflow"></a>
@@ -44,7 +48,7 @@ ACP v1 SDK 客户端先初始化 `dsh --profile acp`，再用绝对 `cwd` 与可
 
 #### 模型看到什么
 
-在 base 的工具和上下文贡献之前，profile 提供 `You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.`。ACP 配置项的路由与每个 `session/new` 的 cwd 会解析其中的占位符。
+在 base 的工具和上下文贡献之前，profile 提供 `You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.`。ACP 配置项的路由与每个 `session/new` 的 cwd 会解析其中的占位符。已记录 subagent 策略处于启用状态的 Session 还会看到 `list_subagent_models` 与 `subagent` 的模型选择字段；否则它看到固定路由定义。
 
 #### Token 影响
 
@@ -61,6 +65,7 @@ ACP v1 SDK 客户端先初始化 `dsh --profile acp`，再用绝对 `cwd` 与可
 - **profile 可以省略 ACP bridge**：自定义 ACP 启动 profile 必须保留本组合包或另一个 `dsh-acp` 配置项；否则没有 peer 响应 client。
 - **用户插件可能破坏 stdout 纯净性**：profile 与单次启动 patch 属于受信任的应用组合。随附组合包不会向 stdout 写入非协议内容，但无法约束任意插入的插件。
 - **配置更改需要重启**：随附 `acp` profile 使用 `patchReload: startup`，确保一条 stdio 连接不会观察到 bridge 或 Agent 依赖被替换。
+- **Windows 上不提供受限 Git Bash**：随附 Windows profile 使用 `pwsh`，因为 Git Bash 无法在 Windows ACL 沙箱令牌内初始化。刻意替换 shell 配置项的部署方也负责相应的沙箱兼容性与权限策略。
 
 
 <a id="dev-note"></a>

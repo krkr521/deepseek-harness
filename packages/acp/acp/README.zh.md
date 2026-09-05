@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-acp` 让受信程序可以通过标准 [Agent Client Protocol（ACP）](https://agentclientprotocol.com) 驱动持久 DeepSeek Harness agent：创建或恢复会话、列出可恢复会话、挂载标准 MCP 服务器、选择模型与推理强度、发送或取消工作、接收语义执行更新，并关闭一个会话而不影响其他会话。它是为自动化而生的——进程外 subagent、测试运行器与脚本化控制器——而不是 DSH 用户界面：它发送标准 ACP 消息、thought、通用工具生命周期、配置与上下文用量，绝不发送 DSH 私有呈现数据或方法。会话持久化支持跨进程重启的列出、恢复与关闭，而删除、fork、转录回放、附加目录与交互式 UI 界面仍不支持。仓库自带的 ACP 客户端是 `dsh-subagent-acp`，`pnpm dsh --profile acp` 会启动一个开箱即用的服务器。设置与用法在前；实现细节放在下方可折叠的开发者章节中。
+`dsh-acp` 让受信程序可以通过标准 [Agent Client Protocol（ACP）](https://agentclientprotocol.com) 驱动持久 DeepSeek Harness agent：创建或恢复会话、列出可恢复会话、挂载标准 MCP 服务器、选择模型与推理强度、发送或取消工作、接收语义执行更新，并关闭一个会话而不影响其他会话。它是为自动化而生的——进程外 subagent、测试运行器与脚本化控制器——而不是 DSH 用户界面：其可互操作界面发送标准 ACP 消息、thought、通用工具生命周期、配置与上下文用量；另一个需要明确协商的 DSH 扩展可发现基于会话的 subagent 并读取其活动，但不发送呈现数据。会话持久化支持跨进程重启的列出、恢复与关闭，而删除、fork、转录回放、附加目录与交互式 UI 界面仍不支持。仓库自带的 ACP 客户端是 `dsh-subagent-acp`，`pnpm dsh --profile acp` 会启动一个开箱即用的服务器。设置与用法在前；实现细节放在下方可折叠的开发者章节中。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、计划、标题、todo、终端视图或 elicitation 时请避开；本服务器刻意只提供标准 ACP v1 界面。
+当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、计划、标题、todo、终端视图或 elicitation 时请避开；可选 subagent 方法返回持久事件，而不是 UI 状态。
 
 ### 最小配置
 
@@ -61,7 +61,7 @@ kind: "package-reference"
 
 | 调用 | 你会得到什么 |
 |---|---|
-| `initialize` | 稳定 ACP v1，以及 `session/list`、`session/resume`、`session/close` 与 Streamable HTTP MCP 支持；图片提示词只在持久附件存储和配置的确切路由支持时公布。 |
+| `initialize` | 稳定 ACP v1，以及 `session/list`、`session/resume`、`session/close` 与 Streamable HTTP MCP 支持；图片提示词只在持久附件存储和配置的确切路由支持时公布。当会话与 subagent 服务均已挂载时，发送 `_meta["_deepseek.ai/dsh"].subagents: true` 的客户端会收到带版本的方法名。 |
 | `authenticate` | 立即成功；服务器不需要身份验证。 |
 | `session/new` | 全新持久 agent；其绝对工作区与 stdio 或 HTTP MCP 服务器会在发布前通过校验，并返回完整配置选项状态。 |
 | `session/list` | 按确定的新到旧顺序分页返回已持久、可恢复的根会话；可选绝对 `cwd` 筛选会尽可能使用物理目录标识。 |
@@ -72,6 +72,8 @@ kind: "package-reference"
 | `session/cancel` / `$/cancel_request` | 提示词所拥有的取消路径；没有进行中的 ACP 提示词时取消自主工作，未知会话 id 则为空操作。 |
 | `session/update` | 已提交 assistant 消息与 thought、通用工具生命周期、配置变化与上下文用量，按会话串行交付。 |
 | `session/request_permission` | 带一次性允许／拒绝选项的权限提示；你的客户端可以自动回答。 |
+| `_deepseek.ai/dsh/subagents/list` | 列出当前 ACP 连接拥有的根会话之下的直接 child 或全部基于会话的 subagent；普通 ACP 会话可以连接树，但绝不会成为 child 行。 |
+| `_deepseek.ai/dsh/subagents/activity` | 返回已授权后代在 `afterSeq` 之后的有界事件页；数据来自实时会话或持久化，并筛选为已结算 assistant 消息与尝试（含嵌入流）、工具、计划、PTC 分派、轮次与步骤活动；尚未结算的模型流不在其中。 |
 
 会话配置从实时 LLM 服务目录提供不透明的提供方／模型选项，并在确切模型声明推理选项时提供 `reasoning_effort`。提示词会在异步图片准入前快照该选择，并在该轮的每个模型步骤中固定它；并发选项变更从下一轮开始生效。ACP 客户端是受信控制器：stdio MCP 条目授权其绝对命令与环境，HTTP 条目授权其绝对 HTTP(S) URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。不支持的界面会被省略或拒绝：`session/load`、删除、fork、附加目录、SSE 或 ACP 传输 MCP、mode、命令、计划、终端、客户端文件系统操作与 elicitation。
 
@@ -102,6 +104,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`AgentSideConnection` 接线、按会话记录、准入与结算、清理 |
 | [`src/content.ts`](src/content.ts) | 协议内容准入与投影：图片校验、路由重查、提示词重建、assistant 块转换 |
 | [`src/codec.ts`](src/codec.ts) | 轮次结束到 ACP `stopReason` 的纯映射 |
+| [`src/extensions.ts`](src/extensions.ts) | DSH subagent 观测方法的协商、授权、筛选与分页 |
 | — | 不发布运行时不变式伴生入口；本传输不拥有持久包内事件流。 |
 
 ### 准入与提示词结算
@@ -169,7 +172,7 @@ kind: "package-reference"
 - **仅一个主 workspace**——附加目录仍不支持。
 - **仅光栅提示词图片**——PNG、JPEG、WebP 与 GIF 要求持久附件存储及确切的图片能力路由。
 - **仅 MCP 工具**——MCP resource 与 prompt 没有 DSH 消费方。
-- **没有转录回放或交互式扩展**——会话删除、fork、`session/load`、mode、命令、计划、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
+- **没有转录回放或交互式控制**——会话删除、fork、`session/load`、mode、命令、计划编辑、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。DSH subagent 扩展只读、要求初始化时选择启用，而且不是可移植的 ACP 方法。
 
 <a id="dev-note"></a>
 ### 开发备注

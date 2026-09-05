@@ -16,7 +16,11 @@ A newly composed top-level Session snapshots the route list in `subagent/model-s
 
 The fixed `list_subagent_models` schema does not enumerate the policy. At call time, provider and model listings are the intersection of the Session route list and the adapter's live advertised directory. An exact provider/model lookup first requires authorization, then resolves the adapter-owned model metadata and all advertised reasoning efforts. The delegation executor independently rejects any explicit provider, model, or effort selection whose effective provider/model route is outside the Session list before `resolveCallConfig()` validates adapter availability and effort support. A call that supplies no selection field retains configured or inherited routing because the model made no route choice.
 
-Model selection has no unrestricted static mode. The default-off Host setting is the only authority, and an enabled Session always carries an exact allowlist. The primary spawn tool reads that setting; the shipped fork tool still exposes no route selection so inherited conversation prefixes remain eligible for provider-side KV Cache reuse.
+Model selection has no unrestricted static mode. The default-off Host setting is the only authority, and an enabled Session always carries an exact allowlist. A Host-scoped spawn tool applies the setting to every Agent in its process, while an Agent- or preset-scoped tool limits it to that composition. The shipped Web presets and ACP profile enable this settings-controlled definition; the fork tool still exposes no route selection so inherited conversation prefixes remain eligible for provider-side KV Cache reuse.
+
+The ACP setting owner requires the Host settings service and waits for its initial stored value before publishing model selection. The ACP bridge in turn requires that published service before accepting a Session. This startup dependency prevents an early `session/new` from sampling the composition default while the stored allowlist is still loading.
+
+The ACP profile retains the platform's confined shell instead of weakening its sandbox to accommodate an incompatible executable. POSIX hosts expose Bash. Windows exposes PowerShell because Git Bash's Cygwin initialization cannot complete inside the Windows ACL sandbox token. This shell choice is independent of the provider/model allowlist, but it keeps an authorized reviewer able to inspect its workspace after selecting a route.
 
 ## Alternatives considered
 
@@ -30,13 +34,15 @@ Model selection has no unrestricted static mode. The default-off Host setting is
 
 **Read current settings on every discovery or delegation call.** Rejected because a settings edit would silently change a running Session's model-visible capabilities and execution authority. The durable Session snapshot keeps resume and child inheritance deterministic.
 
+**Permit Git Bash by broadening the Windows ACP sandbox token.** Rejected because shell dialect preference does not justify weakening the file-effect boundary. The Windows ACP profile selects the native PowerShell executor; deployments that replace it own the different permission policy.
+
 ## Consequences
 
 - New adapter registrations and newly advertised models do not expand user authorization.
 - Adapter removals or catalog failures can reduce what discovery currently lists without deleting the saved route decision; an exact authorized route remains usable when its adapter accepts it even if the advisory catalog omits it.
 - The allowlist itself consumes no parent-request tokens. Only a `list_subagent_models` result enters the transcript.
-- The policy event is log-only and is appended while an Agent is composed, before either SDK begins its run subscription. Shipped SDK profiles do not enable this Web-owned preference, so the event changes neither SDK's expected notifications or persisted-session output; package restore tests own its durable projection instead of fabricating an SDK composition solely to emit it.
-- Unit coverage pins settings validation, malformed durable values, Session sampling and inheritance, discovery intersection, executor denial, live UI catalog invalidation, staged-route retention, connection-generation invalidation, staged whole-array writes, stale-revision rejection, and retry after scoped installation failure. The assembled Web scenario pins the real settings document and Plugins card flow.
+- The policy event is log-only and is appended while an Agent is composed, before either SDK begins its run subscription. The SDK profiles do not enable the preference, so the event changes neither SDK's expected notifications nor persisted-session output; package restore tests own its durable projection instead of fabricating an SDK composition solely to emit it.
+- Unit coverage pins settings validation, malformed durable values, Host and preset Session sampling and inheritance, discovery intersection, executor denial, live UI catalog invalidation, staged-route retention, connection-generation invalidation, staged whole-array writes, stale-revision rejection, and retry after scoped installation failure. Bundle coverage pins ACP's settings owner, startup dependencies, guarded spawn definition, and platform shell rows; the keyless ACP scenario drives exact-route discovery and real child creation, and the assembled Web scenario pins the real settings document and Plugins card flow.
 
 ## Related decisions
 

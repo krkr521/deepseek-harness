@@ -48,7 +48,98 @@ class ControlSurfaceAdapter extends LlmAdapter {
     const userText = current.flatMap(message => message.content)
       .flatMap(block => block.type === 'text' ? [block.text] : [])
       .join('')
-    const hasToolResult = current.some(message => message.content.some(block => block.type === 'tool-result'))
+    if (userText.includes('child-route-proof')) {
+      const text = `child=${options.provider}/${options.model}`
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'usage', usage: { inputTokens: 5, outputTokens: 3 } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
+    const toolResults = current.flatMap(message => message.content)
+      .filter((block): block is Extract<typeof block, { type: 'tool-result' }> => block.type === 'tool-result')
+    const hasToolResult = toolResults.length > 0
+    if (userText.includes('exercise Windows shell policy')) {
+      if (toolResults.length < 2) {
+        const retry = toolResults.length === 1
+        const callId = ToolCallId(retry ? 'control-shell-retry' : 'control-shell-denied')
+        const args = JSON.stringify({
+          command: "Set-Content -LiteralPath './acp-shell-proof.txt' -Value 'ACP_SHELL_OK' -ErrorAction Stop; Write-Output 'ACP_SHELL_OK'",
+          description: 'Write the shell policy test file',
+          ...(retry ? {
+            sandbox_permissions: 'workspace-write',
+            justification: 'The test requests one approved workspace write.',
+          } : {}),
+        })
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index: 0, id: callId, name: 'pwsh', argumentsDelta: args }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: callId, name: 'pwsh', arguments: args } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
+      const text = 'shell policy exercised'
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
+    if (userText.includes('exercise selected child route')) {
+      const discovery = toolResults.find(block => block.toolCallId === ToolCallId('control-route-discovery'))
+      if (discovery === undefined) {
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield {
+          type: 'tool-call-delta',
+          index: 0,
+          id: ToolCallId('control-route-discovery'),
+          name: 'list_subagent_models',
+          argumentsDelta: '{"provider":"control-fixture","model":"beta"}',
+        }
+        yield {
+          type: 'block-end',
+          index: 0,
+          block: {
+            type: 'tool-call',
+            id: ToolCallId('control-route-discovery'),
+            name: 'list_subagent_models',
+            arguments: '{"provider":"control-fixture","model":"beta"}',
+          },
+        }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
+      const child = toolResults.find(block => block.toolCallId === ToolCallId('control-route-child'))
+      if (child === undefined) {
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield {
+          type: 'tool-call-delta',
+          index: 0,
+          id: ToolCallId('control-route-child'),
+          name: 'subagent',
+          argumentsDelta: '{"description":"route proof","prompt":"child-route-proof","provider":"control-fixture","model":"beta","run_in_background":false}',
+        }
+        yield {
+          type: 'block-end',
+          index: 0,
+          block: {
+            type: 'tool-call',
+            id: ToolCallId('control-route-child'),
+            name: 'subagent',
+            arguments: '{"description":"route proof","prompt":"child-route-proof","provider":"control-fixture","model":"beta","run_in_background":false}',
+          },
+        }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
+      const text = child.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+      yield { type: 'usage', usage: { inputTokens: 9, outputTokens: 3 } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     if (!hasToolResult) {
       const callId = ToolCallId(userText.includes('cancel') ? 'control-cancel-add' : 'control-add')
       yield { type: 'block-start', index: 0, blockType: 'reasoning' }

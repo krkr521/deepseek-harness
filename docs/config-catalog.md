@@ -31,7 +31,7 @@ export interface AcpConfig {
 
 Depends on: `Stream` (`@agentclientprotocol/sdk`)
 
-Source: [`packages/acp/acp/src/index.ts:75`](../packages/acp/acp/src/index.ts)
+Source: [`packages/acp/acp/src/index.ts:82`](../packages/acp/acp/src/index.ts)
 
 <a id="deepseek-aidsh-agent-default-model"></a>
 
@@ -2988,7 +2988,8 @@ export interface Config {
   toolName?: string
   /**
    * Sample the Host `subagent-model-selection` user setting for each new
-   * top-level session and inherit that decision in its child sessions.
+   * top-level session and inherit that decision in its child sessions. A Host
+   * mount governs every Agent; an Agent or preset mount governs that scope.
    */
   modelSelectionSettings?: boolean
   /**

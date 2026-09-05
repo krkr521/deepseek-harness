@@ -16,20 +16,42 @@ describe('dsh-acp-app bundle', () => {
     }
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-acp')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-tool-subagent')
     const patches = yaml.load(
       readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'),
       { schema: entryListSchema },
     ) as Array<{
       id?: string
-      disabled?: boolean
+      config?: Record<string, unknown>
+      disabled?: boolean | { __jsExpr: string }
       insert?: Array<{ config?: { model?: string; provider?: string }; id?: string; inject?: string[]; name?: string }>
     }>
     expect(patches.find(patch => patch.id === 'hmr')).toBeUndefined()
     expect(patches.find(patch => patch.id === 'session-title-llm')).toMatchObject({ disabled: true })
+    expect(patches.find(patch => patch.id === 'tool-subagent')).toMatchObject({
+      config: {
+        provider: 'spawn',
+        toolName: 'subagent',
+        modelSelectionSettings: true,
+        backgroundMode: 'continuable',
+      },
+    })
+    expect(patches.find(patch => patch.id === 'bash-sandbox')?.disabled)
+      .toEqual({ __jsExpr: "process.platform === 'win32'" })
+    expect(patches.find(patch => patch.id === 'pwsh-sandbox')?.disabled)
+      .toEqual({ __jsExpr: "process.platform !== 'win32'" })
+    expect(patches.find(patch => patch.id === 'tool-bash')?.disabled)
+      .toEqual({ __jsExpr: "process.platform === 'win32'" })
+    expect(patches.find(patch => patch.id === 'tool-pwsh')?.disabled)
+      .toEqual({ __jsExpr: "process.platform !== 'win32'" })
     const rows = patches.flatMap(patch => patch.insert ?? [])
+    expect(rows.find(row => row.id === 'subagent-model-selection-settings')?.name)
+      .toBe('@deepseek-ai/dsh-tool-subagent/model-selection-settings')
+    expect(rows.find(row => row.id === 'subagent-model-selection-settings')?.inject).toEqual(['settings'])
+    expect(rows.find(row => row.id === 'acp')?.inject).toEqual(['acpAppStartup', 'subagentModelSelection'])
     expect(rows.find(row => row.id === 'acp-app-startup')?.name).toBe('@deepseek-ai/dsh-acp-app')
     expect(rows.find(row => row.id === 'acp')).toMatchObject({
-      inject: ['acpAppStartup'],
+      inject: ['acpAppStartup', 'subagentModelSelection'],
       config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     })
   })

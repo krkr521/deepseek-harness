@@ -49,6 +49,7 @@ export class SubagentModelSelectionConfig extends Service {
   })
 
   private source: () => SubagentModelSelectionSettings
+  private readonly initialSettings: Promise<void> | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'subagentModelSelection')
@@ -60,7 +61,8 @@ export class SubagentModelSelectionConfig extends Service {
     }
     this.validate(entry)
     this.source = () => entry
-    ctx.inject(['settings'], (settingsCtx) => {
+    const settingsAvailable = ctx.get('settings') !== undefined
+    const settingsFiber = ctx.inject(['settings'], (settingsCtx) => {
       settingsCtx.settings.installSection(
         ctx,
         SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
@@ -75,6 +77,14 @@ export class SubagentModelSelectionConfig extends Service {
         },
       )
     })
+    this.initialSettings = settingsAvailable
+      ? settingsFiber.await().then(() => undefined)
+      : undefined
+  }
+
+  /** Wait for an already-available settings provider before publishing this service. */
+  [Service.init](): Promise<void> | undefined {
+    return this.initialSettings
   }
 
   /**

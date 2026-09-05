@@ -88,6 +88,8 @@ export interface AcpTestClient {
   setSessionConfigOption: (params: SetSessionConfigOptionRequest) => Promise<SetSessionConfigOptionResponse>
   prompt: (params: PromptRequest) => Promise<PromptResponse>
   cancel: (params: CancelNotification) => Promise<void>
+  /** Invoke an explicitly negotiated custom ACP method. */
+  extension: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>
 }
 
 /** A running ACP test process and its captured client-side outputs. */
@@ -238,6 +240,7 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     setSessionConfigOption: params => context.request(methods.agent.session.setConfigOption, params),
     prompt: params => context.request(methods.agent.session.prompt, params),
     cancel: params => context.notify(methods.agent.session.cancel, params),
+    extension: (method, params) => context.request<Record<string, unknown>, Record<string, unknown>>(method, params),
   }
   // `exit` only reports the parent process's status. Descendants may retain
   // inherited stdout/stderr handles and buffered ACP frames may still be

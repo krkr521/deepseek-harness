@@ -6,17 +6,19 @@
 
 > 本说明仅取代 [ACP 作为纯自动化协议](../simplification/2026-07-23-acp-automation-only-protocol.zh.md) 中仅支持提示词的协议清单。该决策关于禁止 ACP 成为第二套产品 UI 的规定仍具权威性。
 
+> 标准生命周期、配置、MCP、取消、权限和语义更新决策仍然有效。[ACP subagent 可观测性扩展](../architecture/2026-08-30-acp-subagent-observability-extensions.zh.md)只取代本说明对自定义方法与元数据的一概排除，增加另行协商、只读的 DSH 会话型 subagent 视图。
+
 ## 问题
 
 纯自动化 ACP 桥接层可以创建新会话、一次提交一个提示词、取消提示词、接收已提交 assistant 消息，并回答一次性权限请求。通用外部自动化控制器仍需依赖私有进程知识，才能发现模型、挂载 MCP 服务器、在重启后找到持久会话、恢复会话、独立关闭一个会话，以及观察 reasoning、工具或上下文压力进度。如果在集成专用 runtime 中复制这些控制，ACP 只会名义上可互操作，而 DSH 自动化仍依赖私有旁路协议。
 
-稳定 ACP v1 协议已经定义所需的控制词汇。增加私有 `_meta`、自定义方法、用例专用环境处理或展示投影会割裂该词汇，并重新引入纯自动化决策已经移除的 UI 耦合。
+稳定 ACP v1 协议已经定义所需的控制词汇。增加私有生命周期、配置、MCP、取消、权限或语义更新控制会割裂该词汇，并重新引入纯自动化决策已经移除的 UI 耦合。ACP 没有定义 DSH 会话型 subagent 身份或事件日志，因此另行协商的只读观测方法不会替代标准控制。
 
 ## 决策
 
 `@deepseek-ai/dsh-acp` 实现通用控制器需要的完整标准 ACP v1 自动化子集：`session/new`、`session/list`、`session/resume`、`session/close`、`session/prompt`、`session/cancel`、`session/set_config_option`、JSON-RPC `$/cancel_request`、`session/update` 和 `session/request_permission`。仓库内每条连接的两端都使用 `@agentclientprotocol/sdk` 1.4 的 app／context 接口。
 
-能力会省略未支持的方法和功能。DSH 不增加自定义方法、能力标记或 `_meta`，也不为客户端元数据赋予私有含义。`session/load`、`session/delete`、`session/fork`、附加目录、SSE 和 ACP 传输 MCP、模式、命令、计划、终端、客户端文件系统操作和 elicitation 仍不受支持。会话控制和语义更新是自动化协议数据；它们不会使 ACP 成为人工 UI。
+能力会省略未支持的方法和功能。DSH 不为标准能力字段或控制赋予私有含义；客户端可以另外选择启用命名空间化的 subagent 观测元数据与方法。`session/load`、`session/delete`、`session/fork`、附加目录、SSE 和 ACP 传输 MCP、模式、命令、计划、终端、客户端文件系统操作和 elicitation 仍不受支持。会话控制和语义更新是自动化协议数据；它们不会使 ACP 成为人工 UI。
 
 ## Per-session 所有权
 
@@ -50,13 +52,13 @@ ACP 客户端是受信任的控制器：stdio 声明授权执行进程，HTTP �
 
 只有已提交的持久事实会进入 `session/update`。Assistant 文本／图片变成 `agent_message_chunk`；reasoning 变成 `agent_thought_chunk`；工具调用／结果变成通用 `tool_call` 和 `tool_call_update`；已知的测量上下文压力与容量变成 `usage_update`；adapter 拓扑变化变成 `config_option_update`。持久消息 id 和工具调用 id 保留关联。规范 DSH 工具名作为标准工具调用 title。
 
-Per-session 链会串行处理所有更新，并在提示词完成前 drain。引用工具调用的权限请求只会在该工具调用通知 drain 后发送。原始模型 delta、重试尝试、卡片、终端状态、diff、位置、计划、标题、todo 和不受支持内容不会进入 wire。
+Per-session 链会串行处理所有标准更新，并在提示词完成前 drain。引用工具调用的权限请求只会在该工具调用通知 drain 后发送。原始模型 delta、重试尝试、卡片、终端状态、diff、位置、计划、标题、todo 和不受支持内容不会进入 `session/update`；选择启用的 subagent 活动方法返回经过筛选的持久 child 事件页，而不会把这些记录加入父会话流。
 
 `session/cancel` 和 `$/cancel_request` 进入同一个提示词自有取消路径。关联结尾只映射到标准 stop reason 和 JSON-RPC error；模型输出达到上限时报告 `max_tokens`。ACP 不返回额外 DSH 结果结构。
 
 ## 考虑过的替代方案
 
-**增加私有控制器扩展。** 已拒绝，因为标准 ACP v1 已经承载所需生命周期、配置、MCP、取消、权限和语义更新概念。私有扩展会使通用 SDK 客户端不完整。
+**为标准控制增加私有控制器扩展。** 已拒绝，因为标准 ACP v1 已经承载生命周期、配置、MCP、取消、权限和语义更新概念。DSH subagent 观测与此不同：ACP 没有可移植的 subagent 会话身份或事件日志方法，而且通用客户端不选择启用也保持完整。
 
 **恢复之前的编辑器投影。** 已拒绝，因为计划、终端、diff、卡片、导航和人工 elicitation 属于展示职责。语义工具和 reasoning 事实可以作为有用的自动化遥测，而无需导入展示模块。
 
@@ -68,7 +70,7 @@ Per-session 链会串行处理所有更新，并在提示词完成前 drain。�
 
 ## 验证
 
-聚焦测试覆盖：无私有元数据的确切能力公布；模型／reasoning 选择、无效和并发变更、拓扑更新以及图片路由固定；stdio／HTTP MCP 设置、声明回滚、scope 隔离、恢复和释放；列表分页、规范 workspace 校验、活动冲突、关闭／恢复和重启恢复；消息／思考／工具／用量顺序与 id；工具先于权限；标准 stop reason；请求和会话取消；连接丢失 teardown。
+聚焦测试覆盖：通用初始化中没有私有元数据的精确标准能力公布；模型／reasoning 选择、无效和并发变更、拓扑更新以及图片路由固定；stdio／HTTP MCP 设置、声明回滚、scope 隔离、恢复和释放；列表分页、规范 workspace 校验、活动冲突、关闭／恢复和重启恢复；消息／思考／工具／用量顺序与 id；工具先于权限；标准 stop reason；请求和会话取消；连接丢失 teardown。subagent 可观测性说明拥有其选择启用的元数据与自定义方法覆盖。
 
 通用 keyless conformance 测试会启动真实 ACP demo 两次，并且只使用公开 ACP SDK：选择模型和 reasoning effort、挂载 MCP 服务器、执行工具轮次、观察标准更新、关闭、重启、列出、恢复和取消。它不包含集成专用名称、依赖、元数据或环境行为。
 

@@ -28,6 +28,10 @@ The startup provider binds stdin EOF to the launcher's bounded successful shutdo
 
 The shipped row creates sessions with `deepseek-official` and `deepseek-v4-flash`; a later patch can replace that row's complete config. The base profile owns adapters, tools, persistence, policy, settings, credentials, and the per-session workspace supplied by the ACP client.
 
+The profile mounts the Host-owned `subagent-model-selection` setting for its in-process spawn tool. The ACP bridge waits for that setting's initial stored value before accepting sessions, so concurrent plugin startup cannot make a new Session sample the default instead. When the setting is enabled with a non-empty exact route allowlist, each new top-level Session receives `list_subagent_models` plus the `provider`, `model`, and `reasoning_effort` delegation fields. A delegation must supply `provider` and `model` together, and the executor rejects a route outside the Session allowlist before creating a child. Existing and resumed Sessions retain their recorded decision.
+
+On Windows, the profile explicitly selects the confined PowerShell executor and `pwsh` tool. Git Bash depends on Cygwin process initialization that the Windows ACL sandbox token rejects, so the shipped ACP composition does not expose it. POSIX hosts retain the confined Bash executor and `bash` tool.
+
 -----
 
 <a id="standard-automation-workflow"></a>
@@ -44,7 +48,7 @@ The complete supported method matrix, MCP trust model, update mapping, and stop 
 
 #### What the model sees
 
-The profile supplies `You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.` before the base tool and context contributions. The ACP row's route and each `session/new` cwd resolve the placeholders.
+The profile supplies `You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.` before the base tool and context contributions. The ACP row's route and each `session/new` cwd resolve the placeholders. A Session whose recorded subagent policy is enabled also sees `list_subagent_models` and the model-selection fields on `subagent`; otherwise it sees the fixed-route definition.
 
 #### Token effect
 
@@ -61,6 +65,7 @@ Stable for a fixed profile, provider, model, and tool roster. Profile changes ta
 - **A profile can omit the ACP bridge** — a custom ACP launch profile must retain this bundle or another `dsh-acp` row; otherwise no peer answers the client.
 - **User plugins can violate stdout purity** — profile and per-launch patches are trusted application composition. The shipped bundle writes no non-protocol stdout, but it cannot contain an arbitrary inserted plugin.
 - **Configuration changes require restart** — the shipped `acp` profile uses `patchReload: startup` so one stdio connection never observes a replacement bridge or Agent dependency.
+- **Confined Git Bash is not available on Windows** — the shipped Windows profile uses `pwsh` because Git Bash cannot initialize inside the Windows ACL sandbox token. A deployment that deliberately replaces the shell rows also owns the resulting sandbox compatibility and permission policy.
 
 
 <a id="dev-note"></a>

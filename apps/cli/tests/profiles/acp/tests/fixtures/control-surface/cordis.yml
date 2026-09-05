@@ -19,3 +19,7 @@
 - insert:
     - id: control-surface-llm
       name: './control-surface-llm.ts'
+
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_CONFORMANCE_PERMISSION_MODE ?? 'workspace-write'

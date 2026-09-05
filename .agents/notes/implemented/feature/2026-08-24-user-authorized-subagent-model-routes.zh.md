@@ -16,7 +16,11 @@ Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 
 
 固定的 `list_subagent_models` schema 不会枚举该策略。调用时，提供方和模型列表是 Session 路由列表与适配器实时公布目录的交集。精确 provider/model 查询先要求授权，再解析适配器自有的模型元数据和全部已公布推理强度。委派执行器还会独立拒绝任何生效 provider/model 路由不在 Session 列表内的显式提供方、模型或强度选择，然后才由 `resolveCallConfig()` 校验适配器可用性与强度支持。完全没有选择字段的调用保留配置或继承路由，因为模型没有作出路由选择。
 
-模型选择不再有无限制的静态模式。默认关闭的 Host 设置是唯一授权来源，启用的 Session 始终携带精确允许列表。主 spawn 工具读取该设置；随附 fork 工具仍不公开路由选择，使继承的对话前缀继续符合提供方侧 KV Cache 复用条件。
+模型选择不再有无限制的静态模式。默认关闭的 Host 设置是唯一授权来源，启用的 Session 始终携带精确允许列表。Host scope 的 spawn 工具会把该设置应用于进程内每个 Agent，而 Agent 或 preset scope 的工具只应用于该组合。随附 Web preset 与 ACP profile 启用这项由设置控制的定义；fork 工具仍不公开路由选择，使继承的对话前缀继续符合提供方侧 KV Cache 复用条件。
+
+ACP 设置所有者要求 Host 设置服务，并会在发布模型选择服务前等待初始持久值。ACP bridge 又会在接受 Session 前要求这项已发布服务。这组启动依赖可以防止过早的 `session/new` 在持久允许列表仍在加载时取样组合默认值。
+
+ACP profile 保留平台的受限 shell，而不会为了兼容不适合的可执行程序去削弱沙箱。POSIX 主机公开 Bash。Windows 公开 PowerShell，因为 Git Bash 的 Cygwin 初始化无法在 Windows ACL 沙箱令牌中完成。该 shell 选择独立于 provider/model 允许列表，但它保证获授权的审查 agent 选定路由后仍能检查工作区。
 
 ## Alternatives considered
 
@@ -30,13 +34,15 @@ Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 
 
 **每次发现或委派调用都读取当前设置。** 不采用，因为设置编辑会静默改变运行中 Session 的模型可见能力和执行权限。持久 Session 快照会让恢复与子级继承保持确定。
 
+**通过扩大 Windows ACP 沙箱令牌来允许 Git Bash。** 不采用，因为 shell 方言偏好不足以成为削弱文件影响边界的理由。Windows ACP profile 选择原生 PowerShell 执行器；替换它的部署方负责不同的权限策略。
+
 ## Consequences
 
 - 新适配器注册和新公布模型不会扩大用户授权。
 - 适配器移除或目录失败可以减少发现当前列出的内容，但不会删除已存路由决定；即使建议性目录省略某条精确已授权路由，只要适配器接受它，该路由仍然可用。
 - 允许列表本身不消耗父级请求 token。只有 `list_subagent_models` 结果进入 transcript。
-- 策略事件仅存在于日志，并在 Agent 组合期间、两套 SDK 开始订阅运行前追加。随附 SDK profile 不启用这项 Web 自有偏好，因此该事件不会改变任一 SDK 的预期通知或持久 Session 输出；其持久投影由包级恢复测试负责，不会为了发出该事件而虚构 SDK 组合。
-- 单元覆盖固定设置校验、异常持久值、Session 取样与继承、发现交集、执行器拒绝、UI 实时目录失效、暂存路由保留、连接换代失效、暂存后的整数组写入、陈旧 revision 拒绝，以及作用域安装失败后的重试。组装 Web 场景固定真实设置文档与 Plugins 设置卡流程。
+- 策略事件仅存在于日志，并在 Agent 组合期间、两套 SDK 开始订阅运行前追加。SDK profile 不启用该偏好，因此该事件不会改变任一 SDK 的预期通知或持久 Session 输出；其持久投影由包级恢复测试负责，不会为了发出该事件而虚构 SDK 组合。
+- 单元覆盖固定设置校验、异常持久值、Host 与 preset Session 取样和继承、发现交集、执行器拒绝、UI 实时目录失效、暂存路由保留、连接换代失效、暂存后的整数组写入、陈旧 revision 拒绝，以及作用域安装失败后的重试。bundle 覆盖固定 ACP 的设置所有者、启动依赖、受保护 spawn 定义与平台 shell 配置项；免密钥 ACP 场景会驱动精确路由发现与真实子级创建，组装 Web 场景则固定真实设置文档与 Plugins 设置卡流程。
 
 ## Related decisions
 
