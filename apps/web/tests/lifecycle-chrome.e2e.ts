@@ -105,7 +105,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await compactPicker.waitFor({ timeout: 10_000 })
     await expect.poll(() => compactPicker.getByRole('option').allTextContents()).toEqual([
       'DeepSeek-V4-FlashDeepSeek · deepseek-official/deepseek-v4-flash',
+      'DeepSeek-V4-Flash-Vision-ExpDeepSeek · deepseek-official/deepseek-v4-flash-vision-exp',
     ])
+    const firstCompactOption = compactPicker.getByRole('option').first()
+    await firstCompactOption.hover()
+    await expect.poll(() => firstCompactOption.getAttribute('aria-selected')).toBe('true')
     const compactCommandSnapshot = await captureStableAria(
       page,
       '[aria-label="/compact options"]',

@@ -2,3 +2,4 @@
   - /placeholder: Search…
 - listbox "/compact matches":
   - option "DeepSeek-V4-Flash DeepSeek · deepseek-official/deepseek-v4-flash" [selected]
+  - option "DeepSeek-V4-Flash-Vision-Exp DeepSeek · deepseek-official/deepseek-v4-flash-vision-exp"
