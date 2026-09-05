@@ -647,12 +647,22 @@ export function apply(ctx: Context, config: Config): void {
     const agents = selectionCtx.get('agents')
     /* v8 ignore next -- Agent and preset scopes are minted only by the Agent registry. */
     if (agents === undefined) throw new Error('tool-subagent: scoped model-selection settings require the Agent registry')
-    const scopedInstalls = new WeakMap<Agent, ReturnType<Context['inject']>>()
+    const scopedInstalls = new Map<Agent, ReturnType<Context['inject']>>()
+    const removing = new Set<Promise<void>>()
     const installing = new WeakSet<Agent>()
+    let closed = false
+    // Agent-owned fibers also depend on this settings owner; await both active
+    // installations and removals already started by scope reconciliation.
+    selectionCtx.effect(() => async () => {
+      closed = true
+      const fibers = [...scopedInstalls.values()]
+      scopedInstalls.clear()
+      await Promise.all([...removing, ...fibers.map(fiber => fiber.dispose())])
+    })
     const belongsToComposition = (candidate: Agent): boolean =>
       compositionScope === undefined || scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope)
     const installScoped = (candidate: Agent): void => {
-      if (scopedInstalls.has(candidate) || installing.has(candidate)) return
+      if (closed || scopedInstalls.has(candidate) || installing.has(candidate)) return
       // Reserve before the injected fiber runs: tool registration emits
       // `tools/change` synchronously, which re-enters the reconciliation below.
       installing.add(candidate)
@@ -672,9 +682,11 @@ export function apply(ctx: Context, config: Config): void {
       if (fiber === undefined) return
       scopedInstalls.delete(candidate)
       /* v8 ignore next 3 -- Cordis Fiber disposal contains registration cleanup failures; this is the final diagnostic sink. */
-      void fiber.dispose().catch((error: unknown) => {
+      const removal = fiber.dispose().catch((error: unknown) => {
         selectionCtx.logger.warn(`tool-subagent: failed to remove recomposed Agent "${candidate.id}" definitions: ${String(error)}`)
       })
+      removing.add(removal)
+      void removal.finally(() => { removing.delete(removal) })
     }
     const reconcileComposedAgents = (): void => {
       // Every Agent and preset scope is minted by the Agent registry; the scope

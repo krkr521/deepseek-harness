@@ -300,6 +300,51 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
+  it.each(['Host', 'preset'] as const)('removes and restores %s definitions with their settings and tool owners', async (scope) => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings)
+    const owner = await ctx.plugin(SubagentModelSelectionConfig, { enabled: true, allowedModels: ALLOWED_MODELS })
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+    const composition = scope === 'Host' ? ctx : createScope(ctx, { preset: 'standard' }).ctx
+    const config = { provider: 'spawn', modelSelectionSettings: true, backgroundMode: 'continuable' as const }
+    const toolOwner = await composition.plugin(tool, config)
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`reload-${scope}`),
+      setup: (agentCtx) => {
+        if (scope === 'preset') bindScopeParent(scopeOf(agentCtx)!, scopeOf(composition)!)
+      },
+    })
+    const toolNames = () => ctx.tools.schemas(handle.agent).map(schema => schema.name)
+    expect(selectable(ctx, handle.agent)).toBe(true)
+
+    await owner.dispose()
+    expect(toolNames()).not.toContain('subagent')
+    expect(toolNames()).not.toContain('list_subagent_models')
+    const replacement = await ctx.plugin(SubagentModelSelectionConfig, {
+      enabled: true,
+      allowedModels: [{ provider: 'beta', model: 'replacement-model' }],
+    })
+    expect(selectable(ctx, handle.agent)).toBe(true)
+    expect(toolNames().filter(name => name === 'subagent')).toHaveLength(1)
+    expect(toolNames().filter(name => name === 'list_subagent_models')).toHaveLength(1)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, handle.agent.session)).toEqual(ALLOWED_MODELS)
+
+    await toolOwner.dispose()
+    expect(toolNames()).not.toContain('subagent')
+    expect(toolNames()).not.toContain('list_subagent_models')
+    await composition.plugin(tool, config)
+    expect(selectable(ctx, handle.agent)).toBe(true)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, handle.agent.session)).toEqual(ALLOWED_MODELS)
+
+    await handle.dispose()
+    await replacement.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('releases a shared-preset installation reservation after policy selection fails', async () => {
     const ctx = await boot()
     const preset = createScope(ctx, { preset: 'standard' })

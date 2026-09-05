@@ -18,7 +18,7 @@ Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 
 
 模型选择不再有无限制的静态模式。默认关闭的 Host 设置是唯一授权来源，启用的 Session 始终携带精确允许列表。Host scope 的 spawn 工具会把该设置应用于进程内每个 Agent，而 Agent 或 preset scope 的工具只应用于该组合。随附 Web preset 与 ACP profile 启用这项由设置控制的定义；fork 工具仍不公开路由选择，使继承的对话前缀继续符合提供方侧 KV Cache 复用条件。
 
-ACP 设置所有者要求 Host 设置服务，并会在发布模型选择服务前等待初始持久值。ACP bridge 又会在接受 Session 前要求这项已发布服务。这组启动依赖可以防止过早的 `session/new` 在持久允许列表仍在加载时取样组合默认值。
+ACP 设置所有者要求 Host 设置服务，并会在发布模型选择服务前等待初始持久值。ACP bridge 又会在接受 Session 前要求这项已发布服务。这组启动依赖可以防止过早的 `session/new` 在持久允许列表仍在加载时取样组合默认值。各 Agent 的工具定义同时归 Agent 和依赖设置的组合所有，因此任一所有者的卸载都会等待工具移除；重新加载时保留 Session 已记录的策略。
 
 ACP profile 保留平台的受限 shell，而不会为了兼容不适合的可执行程序去削弱沙箱。POSIX 主机公开 Bash。Windows 公开 PowerShell，因为 Git Bash 的 Cygwin 初始化无法在 Windows ACL 沙箱令牌中完成。该 shell 选择独立于 provider/model 允许列表，但它保证获授权的审查 agent 选定路由后仍能检查工作区。
 
